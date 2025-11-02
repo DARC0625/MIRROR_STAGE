@@ -46,11 +46,60 @@ function Download-File {
     )
 
     Write-Log "[Installer] Downloading $Description from $Uri" ([ConsoleColor]::DarkGray)
+    $activity = "$Description 다운로드"
+    Write-Progress -Activity $activity -Status "연결 중..." -PercentComplete 0
+    Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue | Out-Null
+    $handler = $null
+    $client = $null
+    $response = $null
+    $stream = $null
+    $fileStream = $null
     try {
-        Invoke-WebRequest -Uri $Uri -OutFile $Destination -UseBasicParsing
+        $handler = [System.Net.Http.HttpClientHandler]::new()
+        $handler.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
+        $client = [System.Net.Http.HttpClient]::new($handler)
+        $client.Timeout = [TimeSpan]::FromMinutes(60)
+        $response = $client.GetAsync($Uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        $response.EnsureSuccessStatusCode()
+        $totalBytes = $response.Content.Headers.ContentLength
+        $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $fileStream = [System.IO.FileStream]::new($Destination, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+
+        $buffer = New-Object byte[] 1048576
+        $readBytes = 0L
+        $lastPercent = -1
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+        while (($bytesRead = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $fileStream.Write($buffer, 0, $bytesRead)
+            $readBytes += $bytesRead
+            if ($totalBytes -and $totalBytes -gt 0) {
+                $percent = [int](($readBytes * 100) / $totalBytes)
+                if ($percent -ne $lastPercent) {
+                    $status = "{0}% ({1:n1} MB / {2:n1} MB)" -f $percent, ($readBytes / 1MB), ($totalBytes / 1MB)
+                    Write-Progress -Activity $activity -Status $status -PercentComplete $percent
+                    $lastPercent = $percent
+                }
+            } else {
+                if ($stopwatch.ElapsedMilliseconds -gt 1000) {
+                    $status = "{0:n1} MB 다운로드" -f ($readBytes / 1MB)
+                    Write-Progress -Activity $activity -Status $status -PercentComplete -1
+                    $stopwatch.Restart()
+                }
+            }
+        }
+        $stopwatch.Stop()
     } catch {
+        Write-Progress -Activity $activity -Completed $true
         throw "Failed to download $Description from $Uri. $_"
+    } finally {
+        if ($fileStream) { $fileStream.Flush(); $fileStream.Dispose() }
+        if ($stream) { $stream.Dispose() }
+        if ($response) { $response.Dispose() }
+        if ($client) { $client.Dispose() }
+        if ($handler) { $handler.Dispose() }
     }
+    Write-Progress -Activity $activity -Completed $true
 }
 
 function Ensure-NodeRuntime {
@@ -139,12 +188,34 @@ function Ensure-FlutterSdk {
     if (Test-Path $flutterDir) {
         Remove-Item -Path $flutterDir -Recurse -Force
     }
-    Expand-Archive -Path $archivePath -DestinationPath $ToolsDir -Force
+    Write-Log "[Installer] Extracting Flutter archive (수 분 정도 소요될 수 있습니다)" ([ConsoleColor]::DarkGray)
+    $extractStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $extracted = $false
+    try {
+        Expand-Archive -Path $archivePath -DestinationPath $ToolsDir -Force
+        $extracted = $true
+    } catch {
+        Write-Log "[Installer] Expand-Archive failed: $_. Trying tar.exe fallback." ([ConsoleColor]::Yellow)
+        $tar = Get-Command tar -ErrorAction SilentlyContinue
+        if ($tar) {
+            & $tar.Source -xf $archivePath -C $ToolsDir >> $logFile 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw "tar.exe failed to extract Flutter archive (ExitCode: $LASTEXITCODE)"
+            }
+            $extracted = $true
+        } else {
+            throw
+        }
+    }
+    $extractStopwatch.Stop()
     Remove-Item -Path $archivePath -Force
     if (-not (Test-Path $flutterExe)) {
         throw "Flutter extraction failed. Did not find $flutterExe."
     }
     Set-Content -Path $versionMarker -Value $release.Version
+    if ($extracted) {
+        Write-Log "[Installer] Flutter archive extracted in $([Math]::Round($extractStopwatch.Elapsed.TotalMinutes, 2)) minutes." ([ConsoleColor]::DarkGray)
+    }
     Write-Log "[Installer] Flutter $($release.Version) installed to $flutterDir" ([ConsoleColor]::Green)
     return @{ Flutter = $flutterExe; Version = $release.Version }
 }
