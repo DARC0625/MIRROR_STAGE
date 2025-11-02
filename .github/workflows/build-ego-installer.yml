@@ -14,13 +14,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Inno Setup
-        uses: crazy-max/ghaction-inno-setup@v2
-
       - name: Compile installer
         run: |
-          cd packaging
-          iscc ego-installer.iss
+          choco install innosetup --yes --no-progress
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\ego-installer.iss
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
