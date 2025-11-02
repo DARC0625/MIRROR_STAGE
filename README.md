@@ -64,7 +64,8 @@
   - 릴리스 태그 `ego-v*`를 푸시하거나 워크플로를 수동 실행하면 설치 프로그램이 생성되어 아티팩트로 제공됩니다.
   - 설치 파일은 `packaging/install-mirror-stage-ego.ps1`을 실행해 **번들된 EGO 백엔드/프런트엔드 소스**를 풀고, 부족한 경우 Node.js·Flutter SDK를 자동으로 내려받아 `%LOCALAPPDATA%\MIRROR_STAGE\tools` 아래에 배치합니다. 이후 `npm ci` + `npm run build`, `flutter build web` 을 수행해 런타임에 필요한 산출물을 미리 생성합니다.
   - 기본 설치 경로: `%LOCALAPPDATA%\MIRROR_STAGE`. 설치가 끝나면 EGO 런처가 자동으로 실행되며(After-install run), 시작 메뉴와 선택한 경우 바탕화면 아이콘에서도 `Launch MIRROR STAGE EGO`로 접근할 수 있습니다.
-  - 설치/런처 로그는 `%LOCALAPPDATA%\MIRROR_STAGE\logs` 아래 `install-YYYYMMDD-HHMMSS.log`, `launcher-YYYYMMDD-HHMMSS.log` 로 남습니다. 문제 발생 시 해당 로그를 확인하면 의존성 다운로드 실패, 빌드 오류 등의 원인을 파악할 수 있습니다.
+  - 설치 진행은 Inno Setup 진행 페이지 하단에 실시간 로그/상태 메시지로 표시됩니다. Node.js 다운로드 → Flutter 다운로드/압축 해제 → `npm ci`/`npm run build` → `flutter build web` 순서를 확인할 수 있으며 별도의 PowerShell 창은 더 이상 뜨지 않습니다.
+  - 설치/런처 로그는 `%LOCALAPPDATA%\MIRROR_STAGE\logs` 아래 `install-YYYYMMDD-HHMMSS.log`, `launcher-YYYYMMDD-HHMMSS.log` 로 남습니다. 문제 발생 시 해당 로그와 설치 화면의 기록을 함께 확인하면 의존성 다운로드 실패, 빌드 오류 등의 원인을 빠르게 파악할 수 있습니다.
 
 필수/권장 사전 준비 사항
 - Node.js 20.x (EGO 백엔드). 예: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`

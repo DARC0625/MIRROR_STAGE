@@ -2,7 +2,8 @@ Param(
     [string]$InstallRoot = "$env:LOCALAPPDATA\MIRROR_STAGE",
     [string]$RepoUrl = "https://github.com/DARC0625/MIRROR_STAGE.git",
     [string]$Branch = "main",
-    [switch]$ForceRepoSync
+    [switch]$ForceRepoSync,
+    [string]$ProgressLogPath
 )
 
 function Ensure-Directory([string]$Path) {
@@ -15,6 +16,19 @@ Ensure-Directory -Path $InstallRoot
 $logDir = Join-Path $InstallRoot "logs"
 Ensure-Directory -Path $logDir
 $logFile = Join-Path $logDir ("install-" + (Get-Date).ToString("yyyyMMdd-HHmmss") + ".log")
+$script:ProgressLogPath = $null
+$script:ProgressStep = 0
+$script:ProgressTotal = 8
+
+if ($ProgressLogPath) {
+    try {
+        New-Item -ItemType File -Path $ProgressLogPath -Force | Out-Null
+        Clear-Content -Path $ProgressLogPath -ErrorAction SilentlyContinue
+        $script:ProgressLogPath = $ProgressLogPath
+    } catch {
+        $script:ProgressLogPath = $null
+    }
+}
 
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
@@ -27,15 +41,51 @@ try {
     }
 }
 
+function Write-ProgressRecord {
+    param(
+        [string]$Kind,
+        [string]$Payload
+    )
+
+    if ($script:ProgressLogPath) {
+        Add-Content -Path $script:ProgressLogPath -Value ("@@{0}|{1}" -f $Kind, $Payload)
+    }
+}
+
 function Write-Log {
     param(
         [string]$Message,
-        [ConsoleColor]$Color = [ConsoleColor]::Gray
+        [ConsoleColor]$Color = [ConsoleColor]::Gray,
+        [switch]$SkipBroadcast
     )
+
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "[$timestamp] $Message"
     Add-Content -Path $logFile -Value $line
     try { Write-Host $Message -ForegroundColor $Color } catch { Write-Host $Message }
+    if (-not $SkipBroadcast) {
+        Write-ProgressRecord -Kind 'LOG' -Payload $Message
+    }
+}
+
+function Start-Step {
+    param(
+        [string]$Message
+    )
+
+    $script:ProgressStep += 1
+    $formatted = "[Step {0}/{1}] {2}" -f $script:ProgressStep, $script:ProgressTotal, $Message
+    Write-Log $formatted ([ConsoleColor]::DarkGray)
+    Write-ProgressRecord -Kind 'PROGRESS' -Payload ("{0}|{1}|{2}" -f $script:ProgressStep, $script:ProgressTotal, $Message)
+    Publish-Status $Message
+}
+
+function Publish-Status {
+    param(
+        [string]$Message
+    )
+
+    Write-ProgressRecord -Kind 'STATUS' -Payload $Message
 }
 
 function Download-File {
@@ -46,8 +96,7 @@ function Download-File {
     )
 
     Write-Log "[Installer] Downloading $Description from $Uri" ([ConsoleColor]::DarkGray)
-    $activity = "$Description 다운로드"
-    Write-Progress -Activity $activity -Status "연결 중..." -PercentComplete 0
+    Publish-Status ("Downloading {0}..." -f $Description)
     Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue | Out-Null
     $handler = $null
     $client = $null
@@ -68,6 +117,8 @@ function Download-File {
         $buffer = New-Object byte[] 1048576
         $readBytes = 0L
         $lastPercent = -1
+        $lastLoggedPercent = -10
+        $lastLoggedMegabytes = -1
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
         while (($bytesRead = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
@@ -77,20 +128,25 @@ function Download-File {
                 $percent = [int](($readBytes * 100) / $totalBytes)
                 if ($percent -ne $lastPercent) {
                     $status = "{0}% ({1:n1} MB / {2:n1} MB)" -f $percent, ($readBytes / 1MB), ($totalBytes / 1MB)
-                    Write-Progress -Activity $activity -Status $status -PercentComplete $percent
+                    Publish-Status ("Downloading {0}: {1}" -f $Description, $status)
+                    if (($percent -ge $lastLoggedPercent + 10) -or ($percent -eq 100)) {
+                        Write-Log "[Installer] $Description download progress: $status" ([ConsoleColor]::DarkGray)
+                        $lastLoggedPercent = $percent
+                    }
                     $lastPercent = $percent
                 }
             } else {
-                if ($stopwatch.ElapsedMilliseconds -gt 1000) {
-                    $status = "{0:n1} MB 다운로드" -f ($readBytes / 1MB)
-                    Write-Progress -Activity $activity -Status $status -PercentComplete -1
-                    $stopwatch.Restart()
+                $currentMb = [int]($readBytes / 1MB)
+                if (($currentMb -ne $lastLoggedMegabytes) -and ($currentMb % 50 -eq 0)) {
+                    $status = "{0:n0} MB downloaded" -f $currentMb
+                    Publish-Status ("Downloading {0}: {1}" -f $Description, $status)
+                    Write-Log "[Installer] $Description download progress: $status" ([ConsoleColor]::DarkGray)
+                    $lastLoggedMegabytes = $currentMb
                 }
             }
         }
         $stopwatch.Stop()
     } catch {
-        Write-Progress -Activity $activity -Completed $true
         throw "Failed to download $Description from $Uri. $_"
     } finally {
         if ($fileStream) { $fileStream.Flush(); $fileStream.Dispose() }
@@ -99,7 +155,8 @@ function Download-File {
         if ($client) { $client.Dispose() }
         if ($handler) { $handler.Dispose() }
     }
-    Write-Progress -Activity $activity -Completed $true
+    Publish-Status ("Completed download: {0}" -f $Description)
+    Write-Log "[Installer] Finished downloading $Description" ([ConsoleColor]::Green)
 }
 
 function Ensure-NodeRuntime {
@@ -188,7 +245,8 @@ function Ensure-FlutterSdk {
     if (Test-Path $flutterDir) {
         Remove-Item -Path $flutterDir -Recurse -Force
     }
-    Write-Log "[Installer] Extracting Flutter archive (수 분 정도 소요될 수 있습니다)" ([ConsoleColor]::DarkGray)
+    Write-Log "[Installer] Extracting Flutter archive (this can take a few minutes)" ([ConsoleColor]::DarkGray)
+    Publish-Status "Extracting Flutter archive..."
     $extractStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $extracted = $false
     try {
@@ -250,6 +308,7 @@ function Invoke-LoggedProcess {
 
 try {
     Write-Log "[Installer] Starting MIRROR STAGE EGO installation"
+    Publish-Status "Starting installation..."
 
     $egoRoot = if (Test-Path (Join-Path $InstallRoot "ego")) {
         Join-Path $InstallRoot "ego"
@@ -284,7 +343,10 @@ try {
         throw "Frontend directory is missing from the installer payload. Re-run setup or download the latest installer."
     }
 
+    Start-Step "Preparing Node.js runtime"
     $node = Ensure-NodeRuntime -ToolsDir $toolsDir
+
+    Start-Step "Preparing Flutter SDK"
     $flutter = Ensure-FlutterSdk -ToolsDir $toolsDir
 
     # Update runtime PATH for child processes within this installer
@@ -292,21 +354,32 @@ try {
     $flutterBin = Split-Path -Parent $flutter.Flutter
     $env:Path = "$nodeBin;$flutterBin;$env:Path"
 
+    Start-Step "Installing backend dependencies (npm ci)"
     Invoke-LoggedProcess -FilePath $node.Npm -Arguments "ci" -WorkingDirectory $backendDir -Description "npm ci (backend)"
+
+    Start-Step "Building backend application (npm run build)"
     Invoke-LoggedProcess -FilePath $node.Npm -Arguments "run build" -WorkingDirectory $backendDir -Description "npm run build (backend)"
 
+    Start-Step "Configuring Flutter for web builds"
     Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "config --enable-web" -WorkingDirectory $frontendDir -Description "flutter config --enable-web"
+
+    Start-Step "Resolving Flutter packages"
     Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "pub get" -WorkingDirectory $frontendDir -Description "flutter pub get"
+
+    Start-Step "Building Flutter web bundle"
     Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "build web --release --dart-define=MIRROR_STAGE_WS_URL=http://localhost:3000/digital-twin" -WorkingDirectory $frontendDir -Description "flutter build web --release"
 
+    Start-Step "Validating toolchain versions"
     Write-Log "[Installer] Node version" ([ConsoleColor]::DarkGray)
     & $node.Node --version >> $logFile 2>&1
     Write-Log "[Installer] Flutter version" ([ConsoleColor]::DarkGray)
     & $flutter.Flutter --version >> $logFile 2>&1
 
     Write-Log "[Installer] MIRROR STAGE EGO installation completed successfully." ([ConsoleColor]::Green)
+    Publish-Status "Installation completed successfully."
 } catch {
     Write-Log "[Installer] Error: $_" ([ConsoleColor]::Red)
     Write-Log "See $logFile for details." ([ConsoleColor]::Red)
+    Publish-Status "Installation failed. See log for details."
     throw
 }

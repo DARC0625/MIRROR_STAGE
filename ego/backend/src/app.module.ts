@@ -11,7 +11,15 @@ import { DigitalTwinModule } from './twin/digital-twin.module';
   imports: [
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', '..', 'frontend', 'build', 'web'),
-      exclude: ['/api*'],
+      renderPath: '/',
+      exclude: [
+        '/api',
+        '/api/(.*)',
+        '/digital-twin',
+        '/digital-twin/(.*)',
+        '/socket.io',
+        '/socket.io/(.*)',
+      ],
       serveStaticOptions: {
         index: 'index.html',
       },
