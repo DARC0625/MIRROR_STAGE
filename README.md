@@ -63,6 +63,7 @@
   - GitHub Actions(`.github/workflows/build-ego-installer.yml`)이 Inno Setup을 이용해 `mirror-stage-ego-setup.exe`를 빌드합니다.
   - 릴리스 태그 `ego-v*`를 푸시하거나 워크플로를 수동 실행하면 설치 프로그램이 생성되어 아티팩트로 제공됩니다.
   - 설치 파일은 `packaging/install-mirror-stage-ego.ps1`을 호출해 Node.js / Git / Flutter 설치 및 MIRROR STAGE 배포를 자동화합니다.
+  - 설치 후 `C:\...\ego\start_ego.ps1`을 실행하면 백엔드·프런트엔드가 한 번에 기동됩니다.
 
 필수/권장 사전 준비 사항
 - Node.js 20.x (EGO 백엔드). 예: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`
