@@ -12,6 +12,7 @@ pip install -r requirements.txt
 ```
 - 항상 `.venv`가 활성화된 상태에서만 패키지를 설치/업데이트합니다.
 - 패키지 변경 후에는 `requirements.txt`를 갱신하고 커밋에 포함하세요.
+- `python3-venv` 패키지가 설치되어 있어야 합니다. (Debian/Ubuntu: `sudo apt install python3-venv`)
 
 ## 구조
 ```

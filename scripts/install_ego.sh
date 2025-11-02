@@ -23,13 +23,27 @@ fi
 echo "[EGO] Cloning MIRROR STAGE repository (${BRANCH}) into ${TARGET_DIR}..."
 git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${TARGET_DIR}"
 
+BACKEND_DIR="${TARGET_DIR}/ego/backend"
+
 echo "[EGO] Installing backend dependencies..."
-pushd "${TARGET_DIR}/ego/backend" >/dev/null
-if [[ ! -x ".node/bin/node" ]]; then
-  echo "[EGO] Bundled Node runtime (.node/bin/node) not found. Ensure repo is intact." >&2
+pushd "${BACKEND_DIR}" >/dev/null
+
+NODE_BIN="${BACKEND_DIR}/.node/bin/node"
+if [[ -x "${NODE_BIN}" ]]; then
+  export PATH="$(dirname "${NODE_BIN}"):${PATH}"
+  echo "[EGO] Using bundled Node runtime (${NODE_BIN})."
+elif command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+  echo "[EGO] Using system Node runtime ($(command -v node))."
+else
+  cat <<'ERR' >&2
+[EGO] Node.js 20.x is required. Install it first (e.g.):
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+and then rerun this script.
+ERR
   exit 1
 fi
-export PATH="$(pwd)/.node/bin:${PATH}"
+
 npm install --silent
 popd >/dev/null
 
@@ -40,7 +54,7 @@ if command -v fvm >/dev/null 2>&1; then
 elif command -v flutter >/dev/null 2>&1; then
   flutter pub get
 else
-  echo "[EGO] Flutter SDK (or FVM) not found. Install Flutter 3.35.5+ and re-run pub get." >&2
+  echo "[EGO] Flutter SDK (또는 FVM)가 감지되지 않았습니다. Flutter 3.35.5 이상을 설치한 뒤 'flutter pub get'을 수동으로 실행하세요." >&2
 fi
 popd >/dev/null
 

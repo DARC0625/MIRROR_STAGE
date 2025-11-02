@@ -59,6 +59,11 @@
   ```
   > 기본 저장소 URL은 `MIRROR_STAGE_REPO`, 브랜치는 `MIRROR_STAGE_BRANCH` 환경변수로 덮어쓸 수 있습니다.
 
+필수/권장 사전 준비 사항
+- Node.js 20.x (EGO 백엔드). 예: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`
+- Flutter 3.35.5 이상 또는 FVM (EGO 프런트엔드)
+- Python 3.12 + `python3-venv` (REFLECTOR)
+
 ## 5. 초기 MVP 범위
 1. **인벤토리**: 호스트 등록, 메타데이터 저장, 목록/상세 UI.
 2. **메트릭 수집**: 에이전트가 5초마다 CPU·메모리·로드 전송 → 백엔드 검증 후 TimescaleDB 적재.

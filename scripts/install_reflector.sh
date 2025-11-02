@@ -31,7 +31,9 @@ popd >/dev/null
 
 mv "${TMP_DIR}" "${TARGET_DIR}"
 
-pushd "${TARGET_DIR}/reflector" >/dev/null
+REFLECTOR_DIR="${TARGET_DIR}/reflector"
+
+pushd "${REFLECTOR_DIR}" >/dev/null
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "[REFLECTOR] python3 is required but not found." >&2
@@ -43,13 +45,18 @@ if ! python3 -m venv --help >/dev/null 2>&1; then
   exit 1
 fi
 
-python3 -m venv .venv
+if [[ ! -d .venv ]]; then
+  python3 -m venv .venv
+fi
 source .venv/bin/activate
 pip install --upgrade pip >/dev/null
-pip install -r requirements.txt
-
+pip install -r requirements.txt >/dev/null
 deactivate
 popd >/dev/null
+
+rm -rf "${TARGET_DIR}/.git"
+find "${TARGET_DIR}" -name '.git' -type d -prune -exec rm -rf {} + >/dev/null 2>&1 || true
+rm -f "${TARGET_DIR}/.gitignore"
 
 cat <<'INFO'
 
