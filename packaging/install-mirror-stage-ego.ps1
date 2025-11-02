@@ -88,6 +88,82 @@ function Publish-Status {
     Write-ProgressRecord -Kind 'STATUS' -Payload $Message
 }
 
+function Try-UseSystemNode {
+    param(
+        [int]$RequiredMajor
+    )
+
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    $npmCmd = Get-Command npm -ErrorAction SilentlyContinue
+    if (-not ($nodeCmd -and $npmCmd)) {
+        return $null
+    }
+
+    try {
+        $raw = (& $nodeCmd.Path --version).Trim()
+    } catch {
+        return $null
+    }
+
+    if (-not $raw) {
+        return $null
+    }
+
+    $versionText = $raw.TrimStart('v', 'V')
+    $parsed = $null
+    if (-not [Version]::TryParse($versionText, [ref]$parsed)) {
+        Write-Log "[Installer] Detected Node.js at $($nodeCmd.Path) but could not parse version '$raw'." ([ConsoleColor]::Yellow)
+        return $null
+    }
+
+    if ($parsed.Major -ne $RequiredMajor) {
+        Write-Log "[Installer] Node.js $parsed found at $($nodeCmd.Path) but major version $RequiredMajor is required. Bundled runtime will be installed." ([ConsoleColor]::Yellow)
+        return $null
+    }
+
+    Write-Log "[Installer] Reusing system Node.js $parsed at $($nodeCmd.Path)" ([ConsoleColor]::DarkGray)
+    Publish-Status ("Using existing Node.js runtime ({0})" -f $parsed)
+    return @{ Node = $nodeCmd.Path; Npm = $npmCmd.Path; Version = $parsed }
+}
+
+function Try-UseSystemFlutter {
+    param(
+        [Version]$MinimumVersion
+    )
+
+    $flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
+    if (-not $flutterCmd) {
+        return $null
+    }
+
+    $output = $null
+    try {
+        $output = (& $flutterCmd.Path --version) -join "`n"
+    } catch {
+        return $null
+    }
+
+    if (-not $output) {
+        return $null
+    }
+
+    $match = [regex]::Match($output, 'Flutter\s+(\d+\.\d+\.\d+)')
+    if (-not $match.Success) {
+        Write-Log "[Installer] Detected Flutter at $($flutterCmd.Path) but could not determine version. Bundled SDK will be installed." ([ConsoleColor]::Yellow)
+        return $null
+    }
+
+    $parsed = [Version]$match.Groups[1].Value
+    if ($parsed -lt $MinimumVersion) {
+        Write-Log "[Installer] Flutter $parsed found at $($flutterCmd.Path) but $MinimumVersion or newer is required. Bundled SDK will be installed." ([ConsoleColor]::Yellow)
+        return $null
+    }
+
+    Write-Log "[Installer] Reusing system Flutter SDK $parsed at $($flutterCmd.Path)" ([ConsoleColor]::DarkGray)
+    Publish-Status ("Using existing Flutter SDK ({0})" -f $parsed)
+    return @{ Flutter = $flutterCmd.Path; Version = $parsed }
+}
+
 function Download-File {
     param(
         [string]$Uri,
@@ -165,6 +241,12 @@ function Ensure-NodeRuntime {
     )
 
     Write-Log "[Installer] Ensuring Node.js runtime under $ToolsDir" ([ConsoleColor]::DarkGray)
+    $requiredMajor = 20
+    $systemNode = Try-UseSystemNode -RequiredMajor $requiredMajor
+    if ($systemNode) {
+        return @{ Node = $systemNode.Node; Npm = $systemNode.Npm }
+    }
+
     $nodeVersion = "20.17.0"
     $nodeArchiveName = "node-v$nodeVersion-win-x64.zip"
     $nodeDownloadUrl = "https://nodejs.org/dist/v$nodeVersion/$nodeArchiveName"
@@ -221,6 +303,12 @@ function Ensure-FlutterSdk {
     )
 
     Write-Log "[Installer] Ensuring Flutter SDK under $ToolsDir" ([ConsoleColor]::DarkGray)
+    $minimumFlutter = [Version]"3.35.7"
+    $systemFlutter = Try-UseSystemFlutter -MinimumVersion $minimumFlutter
+    if ($systemFlutter) {
+        return @{ Flutter = $systemFlutter.Flutter; Version = $systemFlutter.Version }
+    }
+
     $flutterDir = Join-Path $ToolsDir "flutter"
     $flutterExe = Join-Path $flutterDir "bin\flutter.bat"
     $versionMarker = Join-Path $flutterDir "MIRROR_STAGE_VERSION.txt"
