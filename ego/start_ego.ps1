@@ -18,21 +18,21 @@ function Resolve-Executable {
     foreach ($name in $CommandNames) {
         $command = Get-Command $name -ErrorAction SilentlyContinue
         if ($command) {
-            return $command.Path
+            return @{ Path = $command.Path; Error = $null }
         }
     }
 
     foreach ($candidate in $CandidatePaths) {
         if (Test-Path $candidate) {
-            return $candidate
+            return @{ Path = $candidate; Error = $null }
         }
     }
 
-    Write-Host "[EGO] $FriendlyName 실행 파일을 찾지 못했습니다." -ForegroundColor Yellow
+    $message = "[EGO] $FriendlyName 실행 파일을 찾지 못했습니다."
     if ($InstallHint) {
-        Write-Host "        설치 힌트: $InstallHint"
+        $message += " `n        설치 힌트: $InstallHint"
     }
-    throw "필수 실행 파일($FriendlyName)이 없어서 MIRROR STAGE EGO를 시작할 수 없습니다."
+    return @{ Path = $null; Error = $message }
 }
 
 function Start-CmdWindow {
@@ -46,11 +46,13 @@ function Start-CmdWindow {
     Start-Process -FilePath $env:ComSpec -ArgumentList $arguments
 }
 
+$errors = @()
+
 if (-not (Test-Path $backendDir)) {
-    throw "백엔드 디렉터리를 찾을 수 없습니다: $backendDir"
+    $errors += "[EGO] 백엔드 디렉터리를 찾을 수 없습니다: $backendDir"
 }
 if (-not (Test-Path $frontendDir)) {
-    throw "프런트엔드 디렉터리를 찾을 수 없습니다: $frontendDir"
+    $errors += "[EGO] 프런트엔드 디렉터리를 찾을 수 없습니다: $frontendDir"
 }
 
 $npmPath = $null
@@ -60,7 +62,11 @@ if (-not $FrontendOnly) {
         "C:\Program Files\nodejs\npm.cmd",
         "C:\Program Files (x86)\nodejs\npm.cmd"
     )
-    $npmPath = Resolve-Executable -CommandNames @("npm.cmd","npm") -CandidatePaths $npmCandidates -FriendlyName "npm" -InstallHint "https://nodejs.org에서 Node.js 20.x LTS 설치"
+    $npmResolution = Resolve-Executable -CommandNames @("npm.cmd","npm") -CandidatePaths $npmCandidates -FriendlyName "npm" -InstallHint "https://nodejs.org에서 Node.js 20.x LTS 설치"
+    $npmPath = $npmResolution.Path
+    if (-not $npmPath) {
+        $errors += $npmResolution.Error
+    }
 }
 
 $flutterPath = $null
@@ -70,7 +76,19 @@ if (-not $BackendOnly) {
         "C:\Program Files (x86)\Google\Flutter\bin\flutter.bat",
         "$env:LOCALAPPDATA\Programs\Flutter\bin\flutter.bat"
     )
-    $flutterPath = Resolve-Executable -CommandNames @("flutter.bat","flutter") -CandidatePaths $flutterCandidates -FriendlyName "Flutter" -InstallHint "winget install Google.Flutter 후 PowerShell 재시작"
+    $flutterResolution = Resolve-Executable -CommandNames @("flutter.bat","flutter") -CandidatePaths $flutterCandidates -FriendlyName "Flutter" -InstallHint "winget install Google.Flutter 후 PowerShell 재시작"
+    $flutterPath = $flutterResolution.Path
+    if (-not $flutterPath) {
+        $errors += $flutterResolution.Error
+    }
+}
+
+if ($errors.Count -gt 0) {
+    Write-Host "MIRROR STAGE EGO를 시작할 수 없습니다." -ForegroundColor Red
+    $errors | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+    Write-Host "필요한 구성 요소를 설치/수정한 뒤 다시 시도해 주세요." -ForegroundColor Yellow
+    Read-Host -Prompt "[EGO] Enter 키를 누르면 창이 닫힙니다"
+    exit 1
 }
 
 if (-not $FrontendOnly) {
@@ -86,9 +104,4 @@ if (-not $BackendOnly) {
 }
 
 Write-Host "[EGO] 두 창을 닫으면 서비스가 중지됩니다." -ForegroundColor Green
-Write-Host "[EGO] 상태 확인을 위해 이 창을 유지합니다. 종료하려면 Enter 키를 누르세요." -ForegroundColor Yellow
-try {
-    Read-Host | Out-Null
-} catch {
-    # ignore when host is non-interactive
-}
+Read-Host -Prompt "[EGO] 상태 창을 종료하려면 Enter 키를 누르세요"
