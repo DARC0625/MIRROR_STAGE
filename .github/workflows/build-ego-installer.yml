@@ -17,7 +17,7 @@ jobs:
       - name: Compile installer
         run: |
           choco install innosetup --yes --no-progress
-          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\ego-installer.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "packaging\ego-installer.iss"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
