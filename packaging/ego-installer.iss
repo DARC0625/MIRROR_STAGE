@@ -182,7 +182,7 @@ begin
   WizardForm.BackButton.Enabled := False;
   WizardForm.NextButton.Enabled := False;
   WizardForm.CancelButton.Enabled := False;
-  Application.ProcessMessages;
+  WizardProcessMessages;
 
   Params := '-ExecutionPolicy Bypass -NoProfile -File ' +
     ExpandConstant('{tmp}\install-mirror-stage-ego.ps1') + ' -InstallRoot ' +
@@ -199,7 +199,7 @@ begin
 
   try
     while True do begin
-      Application.ProcessMessages;
+      WizardProcessMessages;
       UpdateProgressLog(False);
       if WaitForSingleObject(ProcessHandle, 150) <> WAIT_TIMEOUT then
         Break;
