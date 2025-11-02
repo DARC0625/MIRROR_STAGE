@@ -7,26 +7,32 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backendDir = Join-Path $root "backend"
 $frontendDir = Join-Path $root "frontend"
 
-function Ensure-Command {
+function Resolve-Executable {
     param(
-        [string]$CommandName,
+        [string[]]$CommandNames,
+        [string[]]$CandidatePaths,
+        [string]$FriendlyName,
         [string]$InstallHint
     )
 
-    if (-not (Get-Command $CommandName -ErrorAction SilentlyContinue)) {
-        Write-Host "[EGO] '$CommandName' 을(를) 찾을 수 없습니다." -ForegroundColor Yellow
-        if ($InstallHint) {
-            Write-Host "        설치 힌트: $InstallHint"
+    foreach ($name in $CommandNames) {
+        $command = Get-Command $name -ErrorAction SilentlyContinue
+        if ($command) {
+            return $command.Path
         }
-        throw "필수 명령 '$CommandName' 이(가) PATH 에 없습니다."
     }
-}
 
-if (-not $FrontendOnly) {
-    Ensure-Command -CommandName "npm" -InstallHint "https://nodejs.org에서 Node.js 20.x LTS 설치"
-}
-if (-not $BackendOnly) {
-    Ensure-Command -CommandName "flutter" -InstallHint "flutter doctor 실행 후 PATH에 Flutter SDK 추가"
+    foreach ($candidate in $CandidatePaths) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    Write-Host "[EGO] $FriendlyName 실행 파일을 찾지 못했습니다." -ForegroundColor Yellow
+    if ($InstallHint) {
+        Write-Host "        설치 힌트: $InstallHint"
+    }
+    throw "필수 실행 파일($FriendlyName)이 없어서 MIRROR STAGE EGO를 시작할 수 없습니다."
 }
 
 function Start-CmdWindow {
@@ -36,24 +42,47 @@ function Start-CmdWindow {
         [string]$Title
     )
 
-    $cmd = 'cmd.exe'
-    $args = "/K title $Title && cd /d `"$WorkingDirectory`" && $CommandLine"
-    Start-Process -FilePath $cmd -ArgumentList $args
+    $arguments = "/K title $Title && cd /d `"$WorkingDirectory`" && $CommandLine"
+    Start-Process -FilePath $env:ComSpec -ArgumentList $arguments
+}
+
+if (-not (Test-Path $backendDir)) {
+    throw "백엔드 디렉터리를 찾을 수 없습니다: $backendDir"
+}
+if (-not (Test-Path $frontendDir)) {
+    throw "프런트엔드 디렉터리를 찾을 수 없습니다: $frontendDir"
+}
+
+$npmPath = $null
+if (-not $FrontendOnly) {
+    $npmCandidates = @(
+        "$env:LOCALAPPDATA\Programs\nodejs\npm.cmd",
+        "C:\Program Files\nodejs\npm.cmd",
+        "C:\Program Files (x86)\nodejs\npm.cmd"
+    )
+    $npmPath = Resolve-Executable -CommandNames @("npm.cmd","npm") -CandidatePaths $npmCandidates -FriendlyName "npm" -InstallHint "https://nodejs.org에서 Node.js 20.x LTS 설치"
+}
+
+$flutterPath = $null
+if (-not $BackendOnly) {
+    $flutterCandidates = @(
+        "C:\Program Files\Google\Flutter\bin\flutter.bat",
+        "C:\Program Files (x86)\Google\Flutter\bin\flutter.bat",
+        "$env:LOCALAPPDATA\Programs\Flutter\bin\flutter.bat"
+    )
+    $flutterPath = Resolve-Executable -CommandNames @("flutter.bat","flutter") -CandidatePaths $flutterCandidates -FriendlyName "Flutter" -InstallHint "winget install Google.Flutter 후 PowerShell 재시작"
 }
 
 if (-not $FrontendOnly) {
-    if (-not (Test-Path $backendDir)) {
-        throw "백엔드 디렉터리를 찾을 수 없습니다: $backendDir"
-    }
-    Start-CmdWindow -WorkingDirectory $backendDir -CommandLine "npm run start:dev" -Title "MIRROR STAGE EGO Backend"
+    $npmCommand = '"' + $npmPath + '" run start:dev'
+    Start-CmdWindow -WorkingDirectory $backendDir -CommandLine $npmCommand -Title "MIRROR STAGE EGO Backend"
+    Write-Host "[EGO] 백엔드를 시작했습니다. 창이 뜨기까지 잠시 기다려 주세요." -ForegroundColor Green
 }
 
 if (-not $BackendOnly) {
-    if (-not (Test-Path $frontendDir)) {
-        throw "프런트엔드 디렉터리를 찾을 수 없습니다: $frontendDir"
-    }
-    $flutterCommand = 'flutter run -d edge --web-hostname=0.0.0.0 --web-port=8080 --dart-define=MIRROR_STAGE_WS_URL=http://10.0.0.100:3000/digital-twin'
+    $flutterCommand = '"' + $flutterPath + '" run -d edge --web-hostname=0.0.0.0 --web-port=8080 --dart-define=MIRROR_STAGE_WS_URL=http://10.0.0.100:3000/digital-twin'
     Start-CmdWindow -WorkingDirectory $frontendDir -CommandLine $flutterCommand -Title "MIRROR STAGE EGO Frontend"
+    Write-Host "[EGO] 프런트엔드를 시작했습니다. Edge 브라우저가 자동으로 열립니다." -ForegroundColor Green
 }
 
-Write-Host "[EGO] 새 창에서 백엔드/프런트엔드가 실행됩니다. 종료하려면 각 창을 닫으세요." -ForegroundColor Green
+Write-Host "[EGO] 두 창을 닫으면 서비스가 중지됩니다." -ForegroundColor Green

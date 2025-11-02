@@ -1,5 +1,5 @@
 Param(
-    [string]$InstallRoot = "$env:ProgramFiles\MIRROR_STAGE",
+    [string]$InstallRoot = "$env:LOCALAPPDATA\MIRROR_STAGE",
     [string]$RepoUrl = "https://github.com/DARC0625/MIRROR_STAGE.git",
     [string]$Branch = "main"
 )
@@ -12,6 +12,26 @@ Start-Process winget -ArgumentList ($wingetArgs + @("--id", "Git.Git", "-e", "--
 Start-Process winget -ArgumentList ($wingetArgs + @("--id", "Google.Flutter", "-e", "--source", "winget")) -Wait -NoNewWindow
 
 $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+
+Write-Host "[Installer] Configuring PATH entries..."
+$flutterDefaultPaths = @(
+    "C:\Program Files\Google\Flutter\bin",
+    "C:\Program Files (x86)\Google\Flutter\bin",
+    "$env:LOCALAPPDATA\Programs\Flutter\bin"
+)
+foreach ($flutterPath in $flutterDefaultPaths) {
+    if (Test-Path $flutterPath) {
+        if (-not $env:Path.Split(';') -contains $flutterPath) {
+            $env:Path = "$env:Path;$flutterPath"
+        }
+        $machinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
+        if ($machinePath -notmatch [Regex]::Escape($flutterPath)) {
+            [Environment]::SetEnvironmentVariable('Path',"$machinePath;$flutterPath",[EnvironmentVariableTarget]::Machine)
+        }
+        Write-Host " - Flutter path registered: $flutterPath"
+        break
+    }
+}
 
 Write-Host "[Installer] Preparing target directory $InstallRoot"
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
