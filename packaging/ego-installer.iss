@@ -54,7 +54,7 @@ function GetExitCodeProcess(hProcess: LongWord; var lpExitCode: LongWord): BOOL;
   external 'GetExitCodeProcess@kernel32.dll stdcall';
 function CloseHandle(hObject: LongWord): BOOL;
   external 'CloseHandle@kernel32.dll stdcall';
-function SendMessage(hWnd: HWND; Msg: UINT; wParam: WPARAM; lParam: LPARAM): LRESULT;
+function SendMessage(hWnd: HWND; Msg: UINT; wParam: Longint; lParam: Longint): Longint;
   external 'SendMessageW@user32.dll stdcall';
 
 procedure AppendMemoLine(const S: string);
