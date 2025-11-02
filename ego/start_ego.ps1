@@ -9,7 +9,7 @@ try {
     $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
     $encodingApplied = $true
 } catch {
-    # 환경에 따라 chcp 실행이 실패할 수 있음 (로그용 플래그만 남김)
+    # Swallow errors when chcp fails (non-interactive host etc.)
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -51,21 +51,21 @@ function Resolve-Executable {
     foreach ($name in $CommandNames) {
         $command = Get-Command $name -ErrorAction SilentlyContinue
         if ($command) {
-            Write-Log "[EGO] $FriendlyName 경로 탐지: $($command.Path)" ([ConsoleColor]::DarkGray)
+            Write-Log "[EGO] Detected $FriendlyName at $($command.Path)" ([ConsoleColor]::DarkGray)
             return @{ Path = $command.Path; Error = $null }
         }
     }
 
     foreach ($candidate in $CandidatePaths) {
         if (Test-Path $candidate) {
-            Write-Log "[EGO] $FriendlyName 경로 후보 사용: $candidate" ([ConsoleColor]::DarkGray)
+            Write-Log "[EGO] Using candidate path for $FriendlyName: $candidate" ([ConsoleColor]::DarkGray)
             return @{ Path = $candidate; Error = $null }
         }
     }
 
-    $message = "[EGO] $FriendlyName 실행 파일을 찾지 못했습니다."
+    $message = "[EGO] Could not find $FriendlyName executable."
     if ($InstallHint) {
-        $message += " `n        설치 힌트: $InstallHint"
+        $message += " `n        Hint: $InstallHint"
     }
     return @{ Path = $null; Error = $message }
 }
@@ -78,17 +78,17 @@ function Start-CmdWindow {
     )
 
     $arguments = "/K title $Title && cd /d `"$WorkingDirectory`" && $CommandLine"
-    Write-Log "[EGO] 창 실행: $arguments" ([ConsoleColor]::DarkGray)
+    Write-Log "[EGO] Launching console: $arguments" ([ConsoleColor]::DarkGray)
     Start-Process -FilePath $env:ComSpec -ArgumentList $arguments
 }
 
 $errors = @()
 
 if (-not (Test-Path $backendDir)) {
-    $errors += "[EGO] 백엔드 디렉터리를 찾을 수 없습니다: $backendDir"
+    $errors += "[EGO] Backend directory was not found: $backendDir"
 }
 if (-not (Test-Path $frontendDir)) {
-    $errors += "[EGO] 프런트엔드 디렉터리를 찾을 수 없습니다: $frontendDir"
+    $errors += "[EGO] Frontend directory was not found: $frontendDir"
 }
 
 $npmPath = $null
@@ -99,7 +99,7 @@ if (-not $FrontendOnly) {
         "C:\Program Files (x86)\nodejs\npm.cmd",
         "C:\Program Files\nodejs\node_modules\npm\bin\npm.cmd"
     )
-    $npmResolution = Resolve-Executable -CommandNames @("npm.cmd","npm") -CandidatePaths $npmCandidates -FriendlyName "npm" -InstallHint "https://nodejs.org 에서 Node.js 20.x LTS 설치 후 새 창에서 다시 실행"
+    $npmResolution = Resolve-Executable -CommandNames @("npm.cmd","npm") -CandidatePaths $npmCandidates -FriendlyName "npm" -InstallHint "Install Node.js 20.x LTS from https://nodejs.org, then reopen this launcher"
     $npmPath = $npmResolution.Path
     if (-not $npmPath) {
         $errors += $npmResolution.Error
@@ -115,7 +115,7 @@ if (-not $BackendOnly) {
         "$env:LOCALAPPDATA\Programs\Flutter\flutter\bin\flutter.bat",
         "C:\src\flutter\bin\flutter.bat"
     )
-    $flutterResolution = Resolve-Executable -CommandNames @("flutter.bat","flutter") -CandidatePaths $flutterCandidates -FriendlyName "Flutter" -InstallHint "winget install Google.Flutter 실행 후 Windows 로그아웃/재로그인"
+    $flutterResolution = Resolve-Executable -CommandNames @("flutter.bat","flutter") -CandidatePaths $flutterCandidates -FriendlyName "Flutter" -InstallHint "Run `winget install Google.Flutter`, then sign out and sign back in to Windows"
     $flutterPath = $flutterResolution.Path
     if (-not $flutterPath) {
         $errors += $flutterResolution.Error
@@ -123,13 +123,13 @@ if (-not $BackendOnly) {
 }
 
 if ($errors.Count -gt 0) {
-    Write-Log "MIRROR STAGE EGO를 시작할 수 없습니다." ([ConsoleColor]::Red)
+    Write-Log "[EGO] Unable to start MIRROR STAGE EGO." ([ConsoleColor]::Red)
     foreach ($err in $errors) {
         Write-Log $err ([ConsoleColor]::Yellow)
     }
-    Write-Log "필요한 구성 요소를 설치/수정한 뒤 다시 시도해 주세요." ([ConsoleColor]::Yellow)
+    Write-Log "[EGO] Please install or configure the required components and try again." ([ConsoleColor]::Yellow)
     try {
-        Read-Host -Prompt "[EGO] Enter 키를 누르면 창이 닫힙니다" | Out-Null
+        Read-Host -Prompt "[EGO] Press Enter to close this window" | Out-Null
     } catch {
         Start-Sleep -Seconds 5
     }
@@ -139,18 +139,18 @@ if ($errors.Count -gt 0) {
 if (-not $FrontendOnly) {
     $npmCommand = '"' + $npmPath + '" run start:dev'
     Start-CmdWindow -WorkingDirectory $backendDir -CommandLine $npmCommand -Title "MIRROR STAGE EGO Backend"
-    Write-Log "[EGO] 백엔드를 시작했습니다. 창이 뜨기까지 잠시 기다려 주세요." ([ConsoleColor]::Green)
+    Write-Log "[EGO] Backend process started. Please wait for the NestJS window to appear." ([ConsoleColor]::Green)
 }
 
 if (-not $BackendOnly) {
     $flutterCommand = '"' + $flutterPath + '" run -d edge --web-hostname=0.0.0.0 --web-port=8080 --dart-define=MIRROR_STAGE_WS_URL=http://10.0.0.100:3000/digital-twin'
     Start-CmdWindow -WorkingDirectory $frontendDir -CommandLine $flutterCommand -Title "MIRROR STAGE EGO Frontend"
-    Write-Log "[EGO] 프런트엔드를 시작했습니다. Edge 브라우저가 자동으로 열립니다." ([ConsoleColor]::Green)
+    Write-Log "[EGO] Frontend process started. An Edge window will open automatically." ([ConsoleColor]::Green)
 }
 
-Write-Log "[EGO] 두 창을 닫으면 서비스가 중지됩니다." ([ConsoleColor]::Green)
+Write-Log "[EGO] Close the backend/frontend consoles to stop the services." ([ConsoleColor]::Green)
 try {
-    Read-Host -Prompt "[EGO] 상태 창을 종료하려면 Enter 키를 누르세요" | Out-Null
+    Read-Host -Prompt "[EGO] Press Enter to close this status window" | Out-Null
 } catch {
     Start-Sleep -Seconds 5
 }
