@@ -54,6 +54,8 @@ function GetExitCodeProcess(hProcess: LongWord; var lpExitCode: LongWord): BOOL;
   external 'GetExitCodeProcess@kernel32.dll stdcall';
 function CloseHandle(hObject: LongWord): BOOL;
   external 'CloseHandle@kernel32.dll stdcall';
+function SendMessage(hWnd: HWND; Msg: UINT; wParam: WPARAM; lParam: LPARAM): LRESULT;
+  external 'SendMessageW@user32.dll stdcall';
 
 procedure AppendMemoLine(const S: string);
 begin
@@ -61,7 +63,7 @@ begin
     Exit;
   ProgressMemo.Lines.Add(S);
   ProgressMemo.SelStart := Length(ProgressMemo.Text);
-  ProgressMemo.Perform(WM_VSCROLL, SB_BOTTOM, 0);
+  SendMessage(ProgressMemo.Handle, WM_VSCROLL, SB_BOTTOM, 0);
 end;
 
 procedure ParseProgressPayload(const Payload: string; var Step, Total: Integer; var Msg: string);
