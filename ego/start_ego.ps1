@@ -51,14 +51,14 @@ function Resolve-Executable {
     foreach ($name in $CommandNames) {
         $command = Get-Command $name -ErrorAction SilentlyContinue
         if ($command) {
-            Write-Log "[EGO] Detected $FriendlyName at $($command.Path)" ([ConsoleColor]::DarkGray)
+            Write-Log "[EGO] Detected ${FriendlyName} at $($command.Path)" ([ConsoleColor]::DarkGray)
             return @{ Path = $command.Path; Error = $null }
         }
     }
 
     foreach ($candidate in $CandidatePaths) {
         if (Test-Path $candidate) {
-            Write-Log "[EGO] Using candidate path for $FriendlyName: $candidate" ([ConsoleColor]::DarkGray)
+            Write-Log "[EGO] Using candidate path for ${FriendlyName}: $candidate" ([ConsoleColor]::DarkGray)
             return @{ Path = $candidate; Error = $null }
         }
     }
