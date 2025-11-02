@@ -182,8 +182,9 @@ begin
   WizardForm.CancelButton.Enabled := False;
   Application.ProcessMessages;
 
-  Params := Format('-ExecutionPolicy Bypass -NoProfile -File "%s" -InstallRoot "%s" -ProgressLogPath "%s"',
-    [ExpandConstant('{tmp}\install-mirror-stage-ego.ps1'), ExpandConstant('{app}'), ProgressLogFile]);
+  Params := '-ExecutionPolicy Bypass -NoProfile -File ' +
+    ExpandConstant('{tmp}\install-mirror-stage-ego.ps1') + ' -InstallRoot ' +
+    ExpandConstant('{app}') + ' -ProgressLogPath ' + ProgressLogFile + '';
 
   if not Exec('powershell.exe', Params, '', SW_HIDE, ewNoWait, ProcessHandle) then begin
     AppendMemoLine('Failed to launch PowerShell (powershell.exe).');
