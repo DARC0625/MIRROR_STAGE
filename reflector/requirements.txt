@@ -1,0 +1,4 @@
+psutil==5.9.8
+paho-mqtt==1.6.1
+requests==2.32.3
+orjson==3.10.7

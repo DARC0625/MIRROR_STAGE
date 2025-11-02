@@ -1,0 +1,26 @@
+# Node / NestJS
+**/node_modules/
+**/dist/
+**/.pnpm-store/
+ego/backend/.node/
+
+# Flutter / Dart
+**/build/
+**/.dart_tool/
+**/pubspec.lock
+**/.flutter-plugins*
+**/.packages
+**/*.iml
+
+# Python
+**/.venv/
+reflector/logs/
+reflector/reflector.pid
+
+# Misc
+.DS_Store
+*.log
+
+# Python cache
+**/*.pyc
+**/__pycache__/
