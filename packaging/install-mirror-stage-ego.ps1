@@ -1,10 +1,11 @@
 Param(
     [string]$InstallRoot = "$env:LOCALAPPDATA\MIRROR_STAGE",
     [string]$RepoUrl = "https://github.com/DARC0625/MIRROR_STAGE.git",
-    [string]$Branch = "main"
+    [string]$Branch = "main",
+    [switch]$ForceRepoSync
 )
 
-function Ensure-Directory($Path) {
+function Ensure-Directory([string]$Path) {
     if (-not (Test-Path $Path)) {
         New-Item -ItemType Directory -Path $Path | Out-Null
     }
@@ -14,6 +15,17 @@ Ensure-Directory -Path $InstallRoot
 $logDir = Join-Path $InstallRoot "logs"
 Ensure-Directory -Path $logDir
 $logFile = Join-Path $logDir ("install-" + (Get-Date).ToString("yyyyMMdd-HHmmss") + ".log")
+
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+} catch {
+    # Older .NET Framework builds may not expose TLS 1.3
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    } catch {
+        Write-Log "[Installer] Warning: Failed to enforce TLS 1.2+. Downloads may fail on legacy systems." ([ConsoleColor]::Yellow)
+    }
+}
 
 function Write-Log {
     param(
@@ -26,125 +38,194 @@ function Write-Log {
     try { Write-Host $Message -ForegroundColor $Color } catch { Write-Host $Message }
 }
 
-function Invoke-WingetInstall {
+function Download-File {
     param(
-        [string]$Id,
+        [string]$Uri,
+        [string]$Destination,
         [string]$Description
     )
-    Write-Log "[Installer] winget install: $Description ($Id)" ([ConsoleColor]::DarkGray)
-    $args = "install --silent --accept-source-agreements --accept-package-agreements --id `"$Id`" -e --source winget"
-    $process = Start-Process winget -ArgumentList $args -Wait -PassThru -NoNewWindow
-    if ($process.ExitCode -ne 0) {
-        $listArgs = "list --id `"$Id`" -e"
-        $listOutput = & winget $listArgs
-        if ($LASTEXITCODE -eq 0 -and ($listOutput -match $Id)) {
-            Write-Log "[Installer] $Description already installed (winget exit code $($process.ExitCode))." ([ConsoleColor]::Yellow)
-        } else {
-            throw "winget install failed: $Description (ExitCode: $($process.ExitCode))"
-        }
+
+    Write-Log "[Installer] Downloading $Description from $Uri" ([ConsoleColor]::DarkGray)
+    try {
+        Invoke-WebRequest -Uri $Uri -OutFile $Destination -UseBasicParsing
+    } catch {
+        throw "Failed to download $Description from $Uri. $_"
     }
 }
 
-function Resolve-Executable {
+function Ensure-NodeRuntime {
     param(
-        [string[]]$CommandNames,
-        [string[]]$CandidatePaths,
-        [string]$FriendlyName
+        [string]$ToolsDir
     )
-    foreach ($name in $CommandNames) {
-        $command = Get-Command $name -ErrorAction SilentlyContinue
-        if ($command) {
-            Write-Log "[Installer] Found $FriendlyName at $($command.Path)" ([ConsoleColor]::DarkGray)
-            return $command.Path
-        }
+
+    $nodeVersion = "20.17.0"
+    $nodeArchiveName = "node-v$nodeVersion-win-x64.zip"
+    $nodeDownloadUrl = "https://nodejs.org/dist/v$nodeVersion/$nodeArchiveName"
+    $nodeDir = Join-Path $ToolsDir "node"
+    $nodeExe = Join-Path $nodeDir "node.exe"
+    $npmCmd = Join-Path $nodeDir "npm.cmd"
+
+    if (Test-Path $nodeExe -and Test-Path $npmCmd) {
+        Write-Log "[Installer] Bundled Node.js already present at $nodeExe" ([ConsoleColor]::DarkGray)
+        return @{ Node = $nodeExe; Npm = $npmCmd }
     }
-    foreach ($candidate in $CandidatePaths) {
-        if (Test-Path $candidate) {
-            Write-Log "[Installer] Using candidate path for $FriendlyName: $candidate" ([ConsoleColor]::DarkGray)
-            return $candidate
-        }
+
+    Ensure-Directory -Path $ToolsDir
+    $tempArchive = Join-Path $env:TEMP $nodeArchiveName
+    Download-File -Uri $nodeDownloadUrl -Destination $tempArchive -Description "Node.js $nodeVersion"
+
+    if (Test-Path $nodeDir) {
+        Remove-Item -Path $nodeDir -Recurse -Force
     }
-    return $null
+    Expand-Archive -Path $tempArchive -DestinationPath $ToolsDir -Force
+    $extractedDir = Join-Path $ToolsDir ("node-v{0}-win-x64" -f $nodeVersion)
+    if (-not (Test-Path $extractedDir)) {
+        throw "Node.js archive extraction failed. Expected $extractedDir."
+    }
+    Rename-Item -Path $extractedDir -NewName "node"
+    Remove-Item -Path $tempArchive -Force
+
+    Write-Log "[Installer] Node.js $nodeVersion installed to $nodeDir" ([ConsoleColor]::Green)
+    return @{ Node = $nodeExe; Npm = $npmCmd }
 }
 
-function Invoke-LoggedCommand {
+function Get-LatestFlutterRelease {
+    $manifestUrl = "https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json"
+    Write-Log "[Installer] Fetching Flutter release manifest" ([ConsoleColor]::DarkGray)
+    $manifest = Invoke-RestMethod -Uri $manifestUrl -ErrorAction Stop
+    $stableHash = $manifest.current_release.stable
+    $release = $manifest.releases | Where-Object { $_.hash -eq $stableHash -and $_.dart_sdk_arch -eq "x64" } | Select-Object -First 1
+    if (-not $release) {
+        throw "Unable to determine latest stable Flutter release."
+    }
+    $archiveUrl = "https://storage.googleapis.com/flutter_infra_release/releases/$($release.archive)"
+    return @{
+        Version = $release.version
+        ArchiveUrl = $archiveUrl
+        ArchiveName = Split-Path -Leaf $release.archive
+    }
+}
+
+function Ensure-FlutterSdk {
     param(
-        [string]$Command,
+        [string]$ToolsDir
+    )
+
+    $flutterDir = Join-Path $ToolsDir "flutter"
+    $flutterExe = Join-Path $flutterDir "bin\flutter.bat"
+    $versionMarker = Join-Path $flutterDir "MIRROR_STAGE_VERSION.txt"
+
+    $release = Get-LatestFlutterRelease
+
+    if (Test-Path $flutterExe -and (Test-Path $versionMarker)) {
+        $currentVersion = Get-Content $versionMarker -ErrorAction SilentlyContinue
+        if ($currentVersion -eq $release.Version) {
+            Write-Log "[Installer] Flutter $currentVersion already provisioned." ([ConsoleColor]::DarkGray)
+            return @{ Flutter = $flutterExe; Version = $currentVersion }
+        }
+        Write-Log "[Installer] Flutter version mismatch ($currentVersion -> $($release.Version)). Refreshing SDK." ([ConsoleColor]::Yellow)
+    }
+
+    Ensure-Directory -Path $ToolsDir
+    $archivePath = Join-Path $env:TEMP $release.ArchiveName
+    Download-File -Uri $release.ArchiveUrl -Destination $archivePath -Description ("Flutter " + $release.Version)
+
+    if (Test-Path $flutterDir) {
+        Remove-Item -Path $flutterDir -Recurse -Force
+    }
+    Expand-Archive -Path $archivePath -DestinationPath $ToolsDir -Force
+    Remove-Item -Path $archivePath -Force
+    if (-not (Test-Path $flutterExe)) {
+        throw "Flutter extraction failed. Did not find $flutterExe."
+    }
+    Set-Content -Path $versionMarker -Value $release.Version
+    Write-Log "[Installer] Flutter $($release.Version) installed to $flutterDir" ([ConsoleColor]::Green)
+    return @{ Flutter = $flutterExe; Version = $release.Version }
+}
+
+function Invoke-LoggedProcess {
+    param(
+        [string]$FilePath,
+        [string]$Arguments,
         [string]$WorkingDirectory,
         [string]$Description
     )
-    Write-Log "[Installer] Running: $Description" ([ConsoleColor]::DarkGray)
-    Push-Location $WorkingDirectory
-    & $env:ComSpec /c "$Command" >> $logFile 2>&1
-    $exitCode = $LASTEXITCODE
-    Pop-Location
-    if ($exitCode -ne 0) {
-        throw "$Description failed (ExitCode: $exitCode)"
+
+    Write-Log "[Installer] $Description" ([ConsoleColor]::DarkGray)
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $FilePath
+    $psi.Arguments = $Arguments
+    $psi.WorkingDirectory = $WorkingDirectory
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $process = [System.Diagnostics.Process]::Start($psi)
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    if ($stdout) { Add-Content -Path $logFile -Value $stdout }
+    if ($stderr) { Add-Content -Path $logFile -Value $stderr }
+    if ($process.ExitCode -ne 0) {
+        throw "$Description failed (ExitCode: $($process.ExitCode))"
     }
 }
 
 try {
     Write-Log "[Installer] Starting MIRROR STAGE EGO installation"
 
-    Invoke-WingetInstall -Id "OpenJS.NodeJS.LTS" -Description "Node.js LTS"
-    Invoke-WingetInstall -Id "Git.Git" -Description "Git"
-    Invoke-WingetInstall -Id "Google.Flutter" -Description "Flutter SDK"
-
-    $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine')
-    $flutterPaths = @(
-        "C:\Program Files\Google\Flutter\bin",
-        "C:\Program Files (x86)\Google\Flutter\bin",
-        "$env:LOCALAPPDATA\Programs\Flutter\bin",
-        "$env:LOCALAPPDATA\Programs\Flutter\flutter\bin"
-    )
-    foreach ($flutterPath in $flutterPaths) {
-        if (Test-Path $flutterPath) {
-            Write-Log "[Installer] Registering Flutter path: $flutterPath" ([ConsoleColor]::DarkGray)
-            if (-not ($env:Path.Split(';') -contains $flutterPath)) {
-                $env:Path = "$env:Path;$flutterPath"
-            }
-            $machinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
-            if ($machinePath -notmatch [Regex]::Escape($flutterPath)) {
-                [Environment]::SetEnvironmentVariable('Path',"$machinePath;$flutterPath",[EnvironmentVariableTarget]::Machine)
-            }
-            break
-        }
-    }
-
-    $nodeExe = Resolve-Executable -CommandNames @("node.exe","node") -CandidatePaths @(
-        "C:\Program Files\nodejs\node.exe",
-        "$env:LOCALAPPDATA\Programs\nodejs\node.exe"
-    ) -FriendlyName "Node.js"
-    if (-not $nodeExe) { throw "Unable to locate Node.js executable." }
-
-    $flutterExe = Resolve-Executable -CommandNames @("flutter.bat","flutter") -CandidatePaths $flutterPaths -FriendlyName "Flutter"
-    if (-not $flutterExe) { throw "Unable to locate Flutter executable." }
-
-    Write-Log "[Installer] Preparing install root: $InstallRoot"
-    Set-Location $InstallRoot
-
-    if (-not (Test-Path "$InstallRoot\MIRROR_STAGE")) {
-        Write-Log "[Installer] Cloning repository: $RepoUrl ($Branch)" ([ConsoleColor]::DarkGray)
-        git clone --branch $Branch $RepoUrl MIRROR_STAGE >> $logFile 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "Git clone failed" }
+    $egoRoot = if (Test-Path (Join-Path $InstallRoot "ego")) {
+        Join-Path $InstallRoot "ego"
+    } elseif (Test-Path (Join-Path $InstallRoot "MIRROR_STAGE\ego")) {
+        Join-Path $InstallRoot "MIRROR_STAGE\ego"
     } else {
-        Write-Log "[Installer] Updating existing installation" ([ConsoleColor]::DarkGray)
-        Push-Location "$InstallRoot\MIRROR_STAGE"
-        git fetch --all >> $logFile 2>&1
-        git reset --hard origin/$Branch >> $logFile 2>&1
-        Pop-Location
+        Join-Path $InstallRoot "ego"
+    }
+    Ensure-Directory -Path $egoRoot
+
+    $backendDir = Join-Path $egoRoot "backend"
+    $frontendDir = Join-Path $egoRoot "frontend"
+    $toolsDir = Join-Path $InstallRoot "tools"
+
+    if ($ForceRepoSync) {
+        Write-Log "[Installer] Force syncing repository from $RepoUrl ($Branch)" ([ConsoleColor]::Yellow)
+        $gitExe = Get-Command git -ErrorAction SilentlyContinue
+        if (-not $gitExe) {
+            throw "Git executable not found. Install Git (winget install Git.Git) or rerun the installer without -ForceRepoSync."
+        }
+        if (Test-Path $egoRoot) {
+            Remove-Item -Path $egoRoot -Recurse -Force
+        }
+        & $gitExe.Source clone --branch $Branch $RepoUrl $egoRoot >> $logFile 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Git clone failed" }
     }
 
-    $backendDir = "$InstallRoot\MIRROR_STAGE\ego\backend"
-    $frontendDir = "$InstallRoot\MIRROR_STAGE\ego\frontend"
+    if (-not (Test-Path $backendDir) -or -not (Test-Path (Join-Path $backendDir "package.json"))) {
+        throw "Backend directory is missing from the installer payload. Re-run setup or download the latest installer."
+    }
+    if (-not (Test-Path $frontendDir) -or -not (Test-Path (Join-Path $frontendDir "pubspec.yaml"))) {
+        throw "Frontend directory is missing from the installer payload. Re-run setup or download the latest installer."
+    }
 
-    Invoke-LoggedCommand -Command "npm install" -WorkingDirectory $backendDir -Description "npm install"
-    Invoke-LoggedCommand -Command "flutter pub get" -WorkingDirectory $frontendDir -Description "flutter pub get"
+    $node = Ensure-NodeRuntime -ToolsDir $toolsDir
+    $flutter = Ensure-FlutterSdk -ToolsDir $toolsDir
 
-    Write-Log "[Installer] node --version" ([ConsoleColor]::DarkGray)
-    & $nodeExe --version >> $logFile 2>&1
-    Write-Log "[Installer] flutter --version" ([ConsoleColor]::DarkGray)
-    & $flutterExe --version >> $logFile 2>&1
+    # Update runtime PATH for child processes within this installer
+    $nodeBin = Split-Path -Parent $node.Node
+    $flutterBin = Split-Path -Parent $flutter.Flutter
+    $env:Path = "$nodeBin;$flutterBin;$env:Path"
+
+    Invoke-LoggedProcess -FilePath $node.Npm -Arguments "ci" -WorkingDirectory $backendDir -Description "npm ci (backend)"
+    Invoke-LoggedProcess -FilePath $node.Npm -Arguments "run build" -WorkingDirectory $backendDir -Description "npm run build (backend)"
+
+    Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "config --enable-web --no-version-check" -WorkingDirectory $frontendDir -Description "flutter config --enable-web"
+    Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "pub get --no-version-check" -WorkingDirectory $frontendDir -Description "flutter pub get"
+    Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "build web --release --no-version-check --dart-define=MIRROR_STAGE_WS_URL=http://localhost:3000/digital-twin" -WorkingDirectory $frontendDir -Description "flutter build web --release"
+
+    Write-Log "[Installer] Node version" ([ConsoleColor]::DarkGray)
+    & $node.Node --version >> $logFile 2>&1
+    Write-Log "[Installer] Flutter version" ([ConsoleColor]::DarkGray)
+    & $flutter.Flutter --version >> $logFile 2>&1
 
     Write-Log "[Installer] MIRROR STAGE EGO installation completed successfully." ([ConsoleColor]::Green)
 } catch {

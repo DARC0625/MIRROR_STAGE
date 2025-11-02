@@ -18,15 +18,17 @@ SolidCompression=yes
 [Files]
 Source: "install-mirror-stage-ego.ps1"; DestDir: "{tmp}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\ego\start_ego.ps1"; DestDir: "{app}\MIRROR_STAGE\ego"; Flags: ignoreversion
+Source: "..\ego\start_ego.ps1"; DestDir: "{app}\ego"; Flags: ignoreversion
+Source: "..\ego\backend\*"; DestDir: "{app}\ego\backend"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "node_modules\*;dist\*;logs\*;*.log"
+Source: "..\ego\frontend\*"; DestDir: "{app}\ego\frontend"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".dart_tool\*;build\*;logs\*;*.log"
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{tmp}\install-mirror-stage-ego.ps1"" -InstallRoot ""{app}"""; StatusMsg: "Installing MIRROR STAGE EGO..."; Flags: runhidden
-Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\MIRROR_STAGE\ego\start_ego.ps1"""; WorkingDir: "{app}\MIRROR_STAGE\ego"; Flags: postinstall nowait skipifsilent
+Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\ego\start_ego.ps1"""; WorkingDir: "{app}\ego"; Flags: postinstall nowait skipifsilent
 
 [Icons]
-Name: "{group}\Launch MIRROR STAGE EGO"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\MIRROR_STAGE\ego\start_ego.ps1"""; WorkingDir: "{app}\MIRROR_STAGE\ego";
-Name: "{autodesktop}\MIRROR STAGE EGO"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\MIRROR_STAGE\ego\start_ego.ps1"""; WorkingDir: "{app}\MIRROR_STAGE\ego"; Tasks: desktopicon
+Name: "{group}\Launch MIRROR STAGE EGO"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\ego\start_ego.ps1"""; WorkingDir: "{app}\ego";
+Name: "{autodesktop}\MIRROR STAGE EGO"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\ego\start_ego.ps1"""; WorkingDir: "{app}\ego"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "바탕 화면에 MIRROR STAGE EGO 바로가기 만들기"; GroupDescription: "추가 작업 선택:"; Flags: unchecked

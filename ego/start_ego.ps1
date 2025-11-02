@@ -1,6 +1,6 @@
 Param(
-    [switch]$FrontendOnly,
-    [switch]$BackendOnly
+    [switch]$SkipBrowserLaunch,
+    [int]$Port = 3000
 )
 
 $encodingApplied = $false
@@ -9,12 +9,14 @@ try {
     $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
     $encodingApplied = $true
 } catch {
-    # Swallow errors when chcp fails (non-interactive host etc.)
+    # Host may not allow changing code page (e.g. running from Task Scheduler)
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$installRoot = Split-Path -Parent $root
+$toolsDir = Join-Path $installRoot "tools"
 $backendDir = Join-Path $root "backend"
-$frontendDir = Join-Path $root "frontend"
+$backendEntry = Join-Path $backendDir "dist\main.js"
 $logDir = Join-Path $root "logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $logFile = Join-Path $logDir ("launcher-" + (Get-Date).ToString("yyyyMMdd-HHmmss") + ".log")
@@ -31,7 +33,6 @@ function Write-Log {
     try {
         Write-Host $Message -ForegroundColor $Color
     } catch {
-        # host may not support colors (e.g., executed without console)
         Write-Host $Message
     }
 }
@@ -40,7 +41,7 @@ if ($encodingApplied) {
     Write-Log "[EGO] Console encoding switched to UTF-8." ([ConsoleColor]::DarkGray)
 }
 
-function Resolve-Executable {
+function Resolve-Binary {
     param(
         [string[]]$CommandNames,
         [string[]]$CandidatePaths,
@@ -82,44 +83,32 @@ function Start-CmdWindow {
     Start-Process -FilePath $env:ComSpec -ArgumentList $arguments
 }
 
-$errors = @()
-
 if (-not (Test-Path $backendDir)) {
-    $errors += "[EGO] Backend directory was not found: $backendDir"
+    Write-Log "[EGO] Backend directory was not found: $backendDir" ([ConsoleColor]::Yellow)
 }
-if (-not (Test-Path $frontendDir)) {
-    $errors += "[EGO] Frontend directory was not found: $frontendDir"
-}
-
-$npmPath = $null
-if (-not $FrontendOnly) {
-    $npmCandidates = @(
-        "$env:LOCALAPPDATA\Programs\nodejs\npm.cmd",
-        "C:\Program Files\nodejs\npm.cmd",
-        "C:\Program Files (x86)\nodejs\npm.cmd",
-        "C:\Program Files\nodejs\node_modules\npm\bin\npm.cmd"
-    )
-    $npmResolution = Resolve-Executable -CommandNames @("npm.cmd","npm") -CandidatePaths $npmCandidates -FriendlyName "npm" -InstallHint "Install Node.js 20.x LTS from https://nodejs.org, then reopen this launcher"
-    $npmPath = $npmResolution.Path
-    if (-not $npmPath) {
-        $errors += $npmResolution.Error
-    }
+if (-not (Test-Path $backendEntry)) {
+    Write-Log "[EGO] Backend build artifacts are missing ($backendEntry)." ([ConsoleColor]::Yellow)
 }
 
-$flutterPath = $null
-if (-not $BackendOnly) {
-    $flutterCandidates = @(
-        "C:\Program Files\Google\Flutter\bin\flutter.bat",
-        "C:\Program Files (x86)\Google\Flutter\bin\flutter.bat",
-        "$env:LOCALAPPDATA\Programs\Flutter\bin\flutter.bat",
-        "$env:LOCALAPPDATA\Programs\Flutter\flutter\bin\flutter.bat",
-        "C:\src\flutter\bin\flutter.bat"
-    )
-    $flutterResolution = Resolve-Executable -CommandNames @("flutter.bat","flutter") -CandidatePaths $flutterCandidates -FriendlyName "Flutter" -InstallHint "Run `winget install Google.Flutter`, then sign out and sign back in to Windows"
-    $flutterPath = $flutterResolution.Path
-    if (-not $flutterPath) {
-        $errors += $flutterResolution.Error
-    }
+$nodeCandidates = @(
+    (Join-Path $toolsDir "node\node.exe"),
+    (Join-Path $toolsDir "node\bin\node.exe"),
+    "C:\Program Files\nodejs\node.exe",
+    "C:\Program Files (x86)\nodejs\node.exe",
+    "$env:LOCALAPPDATA\Programs\nodejs\node.exe",
+    "$env:ProgramFiles\nodejs\node.exe"
+)
+$node = Resolve-Binary -CommandNames @("node.exe","node") -CandidatePaths $nodeCandidates -FriendlyName "Node.js" -InstallHint "Reinstall MIRROR STAGE or install Node.js 20+ from https://nodejs.org/en/download"
+
+$errors = @()
+if (-not (Test-Path $backendDir)) {
+    $errors += "[EGO] Backend files are missing. Re-run the installer."
+}
+if (-not (Test-Path $backendEntry)) {
+    $errors += "[EGO] Build output not found at $backendEntry. Run `.\install-mirror-stage-ego.ps1` with administrator privileges."
+}
+if (-not $node.Path) {
+    $errors += $node.Error
 }
 
 if ($errors.Count -gt 0) {
@@ -127,7 +116,7 @@ if ($errors.Count -gt 0) {
     foreach ($err in $errors) {
         Write-Log $err ([ConsoleColor]::Yellow)
     }
-    Write-Log "[EGO] Please install or configure the required components and try again." ([ConsoleColor]::Yellow)
+    Write-Log "[EGO] Please resolve the issues above and restart." ([ConsoleColor]::Yellow)
     try {
         Read-Host -Prompt "[EGO] Press Enter to close this window" | Out-Null
     } catch {
@@ -136,19 +125,37 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
-if (-not $FrontendOnly) {
-    $npmCommand = '"' + $npmPath + '" run start:dev'
-    Start-CmdWindow -WorkingDirectory $backendDir -CommandLine $npmCommand -Title "MIRROR STAGE EGO Backend"
-    Write-Log "[EGO] Backend process started. Please wait for the NestJS window to appear." ([ConsoleColor]::Green)
+$nodeCommand = '"' + $node.Path + '" "' + $backendEntry + '"'
+Start-CmdWindow -WorkingDirectory $backendDir -CommandLine $nodeCommand -Title "MIRROR STAGE EGO Backend"
+Write-Log "[EGO] Backend process started. Waiting for health check on port $Port..." ([ConsoleColor]::Green)
+
+$healthUrl = "http://localhost:$Port/api/health"
+$healthCheckPassed = $false
+for ($i = 0; $i -lt 30; $i++) {
+    try {
+        $response = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 3
+        if ($response.StatusCode -eq 200) {
+            $healthCheckPassed = $true
+            break
+        }
+    } catch {
+        Start-Sleep -Seconds 2
+    }
 }
 
-if (-not $BackendOnly) {
-    $flutterCommand = '"' + $flutterPath + '" run -d edge --web-hostname=0.0.0.0 --web-port=8080 --dart-define=MIRROR_STAGE_WS_URL=http://10.0.0.100:3000/digital-twin'
-    Start-CmdWindow -WorkingDirectory $frontendDir -CommandLine $flutterCommand -Title "MIRROR STAGE EGO Frontend"
-    Write-Log "[EGO] Frontend process started. An Edge window will open automatically." ([ConsoleColor]::Green)
+if ($healthCheckPassed) {
+    Write-Log "[EGO] Backend is online at http://localhost:$Port" ([ConsoleColor]::Green)
+    if (-not $SkipBrowserLaunch) {
+        Write-Log "[EGO] Opening dashboard in your default browser..." ([ConsoleColor]::Green)
+        Start-Process "http://localhost:$Port"
+    } else {
+        Write-Log "[EGO] Browser launch skipped. Open http://localhost:$Port manually." ([ConsoleColor]::Yellow)
+    }
+} else {
+    Write-Log "[EGO] Backend failed to respond. Review the backend console window for errors." ([ConsoleColor]::Red)
 }
 
-Write-Log "[EGO] Close the backend/frontend consoles to stop the services." ([ConsoleColor]::Green)
+Write-Log "[EGO] Close the backend console window to stop the services." ([ConsoleColor]::Green)
 try {
     Read-Host -Prompt "[EGO] Press Enter to close this status window" | Out-Null
 } catch {

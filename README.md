@@ -62,9 +62,9 @@
 - **Windows 설치 프로그램(EGO)**
   - GitHub Actions(`.github/workflows/build-ego-installer.yml`)이 Inno Setup을 이용해 `mirror-stage-ego-setup.exe`를 빌드합니다.
   - 릴리스 태그 `ego-v*`를 푸시하거나 워크플로를 수동 실행하면 설치 프로그램이 생성되어 아티팩트로 제공됩니다.
-  - 설치 파일은 `packaging/install-mirror-stage-ego.ps1`을 호출해 Node.js / Git / Flutter 설치 및 MIRROR STAGE 배포를 자동화합니다.
+  - 설치 파일은 `packaging/install-mirror-stage-ego.ps1`을 실행해 **번들된 EGO 백엔드/프런트엔드 소스**를 풀고, 부족한 경우 Node.js·Flutter SDK를 자동으로 내려받아 `%LOCALAPPDATA%\MIRROR_STAGE\tools` 아래에 배치합니다. 이후 `npm ci` + `npm run build`, `flutter build web` 을 수행해 런타임에 필요한 산출물을 미리 생성합니다.
   - 기본 설치 경로: `%LOCALAPPDATA%\MIRROR_STAGE`. 설치가 끝나면 EGO 런처가 자동으로 실행되며(After-install run), 시작 메뉴와 선택한 경우 바탕화면 아이콘에서도 `Launch MIRROR STAGE EGO`로 접근할 수 있습니다.
-  - 설치/런처 로그는 `%LOCALAPPDATA%\MIRROR_STAGE\logs` 아래 `install-YYYYMMDD-HHMMSS.log`, `launcher-YYYYMMDD-HHMMSS.log` 로 남습니다. 문제 발생 시 해당 로그를 확인하면 Flutter/Node 탐지 실패 등의 원인을 파악할 수 있습니다.
+  - 설치/런처 로그는 `%LOCALAPPDATA%\MIRROR_STAGE\logs` 아래 `install-YYYYMMDD-HHMMSS.log`, `launcher-YYYYMMDD-HHMMSS.log` 로 남습니다. 문제 발생 시 해당 로그를 확인하면 의존성 다운로드 실패, 빌드 오류 등의 원인을 파악할 수 있습니다.
 
 필수/권장 사전 준비 사항
 - Node.js 20.x (EGO 백엔드). 예: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`
@@ -107,8 +107,8 @@
 - [ ] 네트워크 장비 위치/케이블/레이블 정보를 위한 디지털 트윈 메타데이터 스키마 확정
 
 ## 9. 환경 관리 원칙
-- **EGO 백엔드(NestJS)**: `mirror_stage/ego/backend` 내에 Node 20.18.0 바이너리가 동봉(`.node/`). `export PATH="$(pwd)/ego/backend/.node/bin:$PATH"` 후 `npm install` 실행. 지휘 서버(10.0.0.100)에서만 동작.
-- **EGO 프런트엔드(Flutter)**: `mirror_stage/ego/frontend` 디렉터리에서 FVM으로 Flutter 3.35.5 고정. `fvm flutter run -d web-server …`로 8080 포트에 띄우고, Control Plane에서 운영.
+- **EGO 백엔드(NestJS)**: 설치 프로그램이 Node 20.x 런타임을 `%LOCALAPPDATA%\MIRROR_STAGE\tools\node`(또는 사용자가 지정한 루트) 아래에 내려받아 `npm ci`, `npm run build`를 수행합니다. 런처는 `node dist/main.js`를 실행해 정적 자산과 API를 동시에 제공합니다.
+- **EGO 프런트엔드(Flutter)**: 배포 시 `flutter build web` 결과물을 `frontend/build/web`에 생성해 백엔드에서 정적 제공하므로, 운영 시에는 Flutter SDK가 필요하지 않습니다. UI 개발/커스터마이징이 필요할 때만 FVM 또는 `%LOCALAPPDATA%\MIRROR_STAGE\tools\flutter` SDK를 사용해 다시 빌드합니다.
 - **REFLECTOR 에이전트(Python)**: `mirror_stage/reflector` 에 전용 가상환경(`python3 -m venv .venv`). 활성화 상태에서만 패키지 설치 및 스크립트 실행. 각 10.0.0.x 호스트에 배포 시 동일 구조 유지.
 - 각 서브 프로젝트는 독립적인 커밋 히스토리로 의존성 변경을 추적하며, 전역 패키지 설치나 시스템 Python 사용은 금지.
 - 공통 도구(예: pre-commit, lint 스크립트)는 `scripts/`에 배치하고 README에 실행 절차 명시.
