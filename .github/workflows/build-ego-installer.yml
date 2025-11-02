@@ -1,0 +1,29 @@
+name: Build MIRROR STAGE EGO Installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'ego-v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        uses: crazy-max/ghaction-inno-setup@v2
+
+      - name: Compile installer
+        run: |
+          cd packaging
+          iscc ego-installer.iss
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mirror-stage-ego-installer
+          path: packaging\Output\mirror-stage-ego-setup.exe
