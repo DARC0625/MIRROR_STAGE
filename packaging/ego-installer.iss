@@ -22,11 +22,11 @@ Source: "..\ego\start_ego.ps1"; DestDir: "{app}\MIRROR_STAGE\ego"; Flags: ignore
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{tmp}\install-mirror-stage-ego.ps1"" -InstallRoot ""{app}"""; StatusMsg: "Installing MIRROR STAGE EGO..."; Flags: runhidden
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\MIRROR_STAGE\ego\start_ego.ps1"""; WorkingDir: "{app}\MIRROR_STAGE\ego"; Flags: postinstall nowait
+Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\MIRROR_STAGE\ego\start_ego.ps1"""; WorkingDir: "{app}\MIRROR_STAGE\ego"; Flags: postinstall nowait skipifsilent
 
 [Icons]
-Name: "{group}\Launch MIRROR STAGE EGO"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\MIRROR_STAGE\ego\start_ego.ps1"""; WorkingDir: "{app}\MIRROR_STAGE\ego";
-Name: "{autodesktop}\MIRROR STAGE EGO"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\MIRROR_STAGE\ego\start_ego.ps1"""; WorkingDir: "{app}\MIRROR_STAGE\ego"; Tasks: desktopicon
+Name: "{group}\Launch MIRROR STAGE EGO"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\MIRROR_STAGE\ego\start_ego.ps1"""; WorkingDir: "{app}\MIRROR_STAGE\ego";
+Name: "{autodesktop}\MIRROR STAGE EGO"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\MIRROR_STAGE\ego\start_ego.ps1"""; WorkingDir: "{app}\MIRROR_STAGE\ego"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "바탕 화면에 MIRROR STAGE EGO 바로가기 만들기"; GroupDescription: "추가 작업 선택:"; Flags: unchecked
