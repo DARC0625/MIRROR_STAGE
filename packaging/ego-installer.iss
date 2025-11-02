@@ -45,7 +45,7 @@ var
   ProgressMemo: TMemo;
   ProgressLogFile: string;
   ProgressFilePos: Integer;
-  PendingLogData: string;
+  PendingLogData: AnsiString;
   InstallerSucceeded: Boolean;
 
 function WaitForSingleObject(hHandle: LongWord; dwMilliseconds: LongWord): LongWord;
@@ -144,8 +144,8 @@ end;
 
 function UpdateProgressLog(Final: Boolean): Boolean;
 var
-  Content: string;
-  NewContent: string;
+  Content: AnsiString;
+  NewContent: AnsiString;
   LenContent: Integer;
 begin
   Result := False;
