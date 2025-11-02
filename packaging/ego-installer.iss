@@ -23,7 +23,7 @@ Source: "..\ego\backend\*"; DestDir: "{app}\ego\backend"; Flags: ignoreversion r
 Source: "..\ego\frontend\*"; DestDir: "{app}\ego\frontend"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".dart_tool\*;build\*;logs\*;*.log"
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{tmp}\install-mirror-stage-ego.ps1"" -InstallRoot ""{app}"""; StatusMsg: "MIRROR STAGE EGO 설치 스크립트를 실행 중입니다..."; Flags: runasoriginaluser waituntilterminated
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{tmp}\install-mirror-stage-ego.ps1"" -InstallRoot ""{app}"""; StatusMsg: "Node.js 및 Flutter 배포 중입니다. PowerShell 창에서 단계별 진행률을 확인하세요 (Node.js 다운로드 → Flutter 다운로드/압축 해제 → npm/Flutter 빌드)."; Flags: runasoriginaluser waituntilterminated
 Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\ego\start_ego.ps1"""; WorkingDir: "{app}\ego"; Flags: postinstall nowait skipifsilent
 
 [Icons]

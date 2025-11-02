@@ -295,9 +295,9 @@ try {
     Invoke-LoggedProcess -FilePath $node.Npm -Arguments "ci" -WorkingDirectory $backendDir -Description "npm ci (backend)"
     Invoke-LoggedProcess -FilePath $node.Npm -Arguments "run build" -WorkingDirectory $backendDir -Description "npm run build (backend)"
 
-    Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "config --enable-web --no-version-check" -WorkingDirectory $frontendDir -Description "flutter config --enable-web"
-    Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "pub get --no-version-check" -WorkingDirectory $frontendDir -Description "flutter pub get"
-    Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "build web --release --no-version-check --dart-define=MIRROR_STAGE_WS_URL=http://localhost:3000/digital-twin" -WorkingDirectory $frontendDir -Description "flutter build web --release"
+    Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "config --enable-web" -WorkingDirectory $frontendDir -Description "flutter config --enable-web"
+    Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "pub get" -WorkingDirectory $frontendDir -Description "flutter pub get"
+    Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "build web --release --dart-define=MIRROR_STAGE_WS_URL=http://localhost:3000/digital-twin" -WorkingDirectory $frontendDir -Description "flutter build web --release"
 
     Write-Log "[Installer] Node version" ([ConsoleColor]::DarkGray)
     & $node.Node --version >> $logFile 2>&1
