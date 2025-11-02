@@ -46,20 +46,33 @@
     └── logs/…                 # 에이전트 운영 로그 (실행 후 생성)
 ```
 
-## 4. 초기 MVP 범위
+## 4. 자동 설치 스크립트
+- **EGO (지휘본부)**
+  ```bash
+  curl -fsSLo install_ego.sh https://raw.githubusercontent.com/DARC0625/MIRROR_STAGE/main/scripts/install_ego.sh
+  bash install_ego.sh ~/mirror_stage_ego
+  ```
+- **REFLECTOR (호스트 에이전트)**
+  ```bash
+  curl -fsSLo install_reflector.sh https://raw.githubusercontent.com/DARC0625/MIRROR_STAGE/main/scripts/install_reflector.sh
+  bash install_reflector.sh ~/mirror_stage_reflector
+  ```
+  > 기본 저장소 URL은 `MIRROR_STAGE_REPO`, 브랜치는 `MIRROR_STAGE_BRANCH` 환경변수로 덮어쓸 수 있습니다.
+
+## 5. 초기 MVP 범위
 1. **인벤토리**: 호스트 등록, 메타데이터 저장, 목록/상세 UI.
 2. **메트릭 수집**: 에이전트가 5초마다 CPU·메모리·로드 전송 → 백엔드 검증 후 TimescaleDB 적재.
 3. **실시간 대시보드**: 테이블+스파크라인 UI, WebSocket으로 즉시 갱신.
 4. **명령 실행**: 임의 호스트에 `uptime`과 같은 명령 전달, stdout/stderr 수집 및 표시.
 5. **인증**: 단일 사용자 로그인(TOTP) + 에이전트용 API 토큰.
 
-## 5. 보안 및 네트워킹
+## 6. 보안 및 네트워킹
 - 에이전트 ↔ 게이트웨이 상호 TLS, 인증서 자동 갱신
 - 주제(topic) 단위 권한 제어, 호스트별 자격 증명
 - Vault 호환 비밀 관리(개발 단계에서는 dotenv 사용)
 - 모든 명령과 결과에 대한 감사 로그
 
-## 6. 단기 로드맵
+## 7. 단기 로드맵
 1. 백엔드/프런트엔드/에이전트 디렉터리 스캐폴딩 및 devcontainer·docker-compose 구성
 2. `HostMetrics`, `CommandRequest`, `CommandResult`용 protobuf/OpenAPI 스키마 정의
 3. 백엔드 뼈대 구현:
@@ -73,7 +86,7 @@
 6. 네트워크 토폴로지·공간 데이터 스키마 정의 및 미러월드 3D 뷰 프로토타입 제작
 7. 로컬 멀티 호스트 시뮬레이션용 docker-compose 시나리오 추가
 
-## 7. 다음 액션 체크리스트
+## 8. 다음 액션 체크리스트
 - [ ] TimescaleDB vs InfluxDB 최종 결정
 - [ ] `docs/api-contracts.md`에 상세 API/큐 명세 작성
 - [ ] pre-commit 훅(ruff, black, eslint, prettier 등) 구성
@@ -81,7 +94,7 @@
 - [ ] 테스트 호스트 1대로 메트릭 수집 엔드투엔드 검증
 - [ ] 네트워크 장비 위치/케이블/레이블 정보를 위한 디지털 트윈 메타데이터 스키마 확정
 
-## 8. 환경 관리 원칙
+## 9. 환경 관리 원칙
 - **EGO 백엔드(NestJS)**: `mirror_stage/ego/backend` 내에 Node 20.18.0 바이너리가 동봉(`.node/`). `export PATH="$(pwd)/ego/backend/.node/bin:$PATH"` 후 `npm install` 실행. 지휘 서버(10.0.0.100)에서만 동작.
 - **EGO 프런트엔드(Flutter)**: `mirror_stage/ego/frontend` 디렉터리에서 FVM으로 Flutter 3.35.5 고정. `fvm flutter run -d web-server …`로 8080 포트에 띄우고, Control Plane에서 운영.
 - **REFLECTOR 에이전트(Python)**: `mirror_stage/reflector` 에 전용 가상환경(`python3 -m venv .venv`). 활성화 상태에서만 패키지 설치 및 스크립트 실행. 각 10.0.0.x 호스트에 배포 시 동일 구조 유지.

@@ -34,7 +34,12 @@ PYTHONPATH=src python -m agent.main --once
 
 ## 연속 업링크
 - `config.json`에 백엔드 엔드포인트와 좌표/랙 정보를 정의.
-- `start_reflector.sh` 스크립트로 백그라운드 실행:
+- (선택) 원클릭 설치:
+  ```bash
+  curl -fsSLo install_reflector.sh https://raw.githubusercontent.com/DARC0625/MIRROR_STAGE/main/scripts/install_reflector.sh
+  bash install_reflector.sh ~/mirror_stage_reflector
+  ```
+- 수동 실행 시 `start_reflector.sh` 스크립트로 백그라운드 실행:
   ```bash
   ./start_reflector.sh
   tail -f logs/reflector.log
