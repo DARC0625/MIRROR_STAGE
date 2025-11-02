@@ -16,7 +16,9 @@ interface HostState {
   positionOverride?: TwinPosition;
 }
 
-const GATEWAY_HOSTNAME = 'core-switch';
+const EGO_HOSTNAME = process.env.EGO_HOSTNAME ?? 'ego-hub';
+const EGO_DISPLAY_NAME = process.env.EGO_DISPLAY_NAME ?? 'MIRROR STAGE EGO';
+const EGO_PRIMARY_IP = process.env.EGO_PRIMARY_IP ?? '10.0.0.100';
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
 @Injectable()
@@ -47,10 +49,12 @@ export class DigitalTwinService {
       netBytesRx: sample.net_bytes_rx ?? null,
     };
 
+    const ipAddress = this.ensureIp(hostname, sample.ip ?? sample.ipv4);
+
     const current: HostState = this.state.get(hostname) ?? {
       hostname,
-      displayName: this.guessDisplayName(hostname),
-      ip: this.ensureIp(hostname, sample.ip ?? sample.ipv4),
+      displayName: hostname,
+      ip: ipAddress,
       agentVersion: sample.agent_version,
       platform: sample.platform,
       rack: sample.rack,
@@ -58,6 +62,7 @@ export class DigitalTwinService {
       lastSeen: now,
     };
 
+    current.ip = ipAddress;
     current.metrics = metrics;
     current.agentVersion = sample.agent_version;
     current.platform = sample.platform;
@@ -70,6 +75,7 @@ export class DigitalTwinService {
           z: sample.position.z ?? 0,
         }
       : current.positionOverride;
+    current.displayName = this.formatReflectorName(current);
 
     this.state.set(hostname, current);
 
@@ -81,45 +87,35 @@ export class DigitalTwinService {
     return this.twinSubject.getValue();
   }
 
+
   private buildSnapshot(): TwinState {
     const now = Date.now();
-    const hosts = Array.from(this.state.values()).sort((a, b) => a.hostname.localeCompare(b.hostname));
+    const allHosts = Array.from(this.state.values());
+    const egoIndex = allHosts.findIndex((host) => this.isEgoHost(host));
+    const egoState = egoIndex >= 0 ? allHosts.splice(egoIndex, 1)[0] : undefined;
+
+    const hosts = allHosts.sort((a, b) => a.hostname.localeCompare(b.hostname));
 
     const renderedHosts: HostTwinState[] = [];
     const links: TwinLink[] = [];
 
-    const coreHost: HostTwinState = {
-      hostname: GATEWAY_HOSTNAME,
-      displayName: 'Core Switch',
-      ip: '10.0.0.1',
-      status: 'online',
-      lastSeen: new Date(now).toISOString(),
-      agentVersion: 'virtual',
-      platform: 'virtual-switch',
-      metrics: {
-        cpuLoad: 12.5,
-        memoryUsedPercent: 18.2,
-        loadAverage: 0.8,
-        uptimeSeconds: 86_400,
-        gpuTemperature: null,
-        netBytesTx: null,
-        netBytesRx: null,
-      },
-      position: { x: 0, y: 0, z: 0 },
-    };
-
-    renderedHosts.push(coreHost);
+    const egoHost = this.buildEgoHost(egoState, now);
+    renderedHosts.push(egoHost);
 
     const total = hosts.length;
     hosts.forEach((host, index) => {
       const status = this.resolveStatus(now - host.lastSeen);
+      host.displayName = this.formatReflectorName(host);
       const position =
         host.positionOverride ??
         this.computePosition(index, total, status === 'offline' ? 18 : 14);
 
+      const label = this.formatLabel(host.displayName, host.ip, host.rack);
+
       const twinHost: HostTwinState = {
         hostname: host.hostname,
         displayName: host.displayName,
+        label,
         ip: host.ip,
         status,
         lastSeen: new Date(host.lastSeen).toISOString(),
@@ -136,8 +132,8 @@ export class DigitalTwinService {
       const utilization = Math.min(1, host.metrics.cpuLoad / 100);
 
       links.push({
-        id: `${coreHost.hostname}::${host.hostname}`,
-        source: coreHost.hostname,
+        id: `${egoHost.hostname}::${host.hostname}`,
+        source: egoHost.hostname,
         target: host.hostname,
         throughputGbps: Number(throughputGbps.toFixed(3)),
         utilization: Number(utilization.toFixed(3)),
@@ -215,13 +211,71 @@ export class DigitalTwinService {
     });
   }
 
-  private guessDisplayName(hostname: string): string {
-    if (!hostname.includes('-')) {
-      return hostname.toUpperCase();
+
+  private formatReflectorName(host: HostState): string {
+    const ip = host.ip;
+    if (ip && this.isValidV4(ip)) {
+      const octet = ip.split('.').pop() ?? 'X';
+      return `REFLECTOR-${octet.padStart(3, '0')}`;
     }
-    return hostname
-      .split('-')
-      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-      .join(' ');
+
+    const normalized = host.hostname.trim();
+    if (!normalized) {
+      return 'REFLECTOR-UNKNOWN';
+    }
+
+    return `REFLECTOR-${normalized.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase()}`;
+  }
+
+  private formatLabel(displayName: string, ip: string, rack?: string): string {
+    const segments = [displayName, ip];
+    if (rack) {
+      segments.push(rack);
+    }
+    return segments.join('\n');
+  }
+
+  private buildEgoHost(egoState: HostState | undefined, timestamp: number): HostTwinState {
+    const metrics = egoState?.metrics ?? this.defaultCoreMetrics();
+    const ip = egoState?.ip ?? EGO_PRIMARY_IP;
+    const lastSeenTimestamp = egoState?.lastSeen ?? timestamp;
+    const status = egoState ? this.resolveStatus(timestamp - egoState.lastSeen) : 'online';
+
+    return {
+      hostname: EGO_HOSTNAME,
+      displayName: EGO_DISPLAY_NAME,
+      label: this.formatLabel(EGO_DISPLAY_NAME, ip, egoState?.rack),
+      ip,
+      status,
+      lastSeen: new Date(lastSeenTimestamp).toISOString(),
+      agentVersion: egoState?.agentVersion ?? 'ego',
+      platform: egoState?.platform ?? 'ego-backend',
+      rack: egoState?.rack,
+      metrics,
+      position: { x: 0, y: 0, z: 0 },
+    };
+  }
+
+  private isEgoHost(host: HostState): boolean {
+    if (!host) {
+      return false;
+    }
+    if (host.ip && this.isValidV4(host.ip) && host.ip === EGO_PRIMARY_IP) {
+      return true;
+    }
+    const normalized = host.hostname.toLowerCase();
+    return normalized === EGO_HOSTNAME || normalized === EGO_DISPLAY_NAME.toLowerCase();
+  }
+
+  private defaultCoreMetrics(): HostMetricsSummary {
+    return {
+      cpuLoad: 0,
+      memoryUsedPercent: 0,
+      loadAverage: 0,
+      uptimeSeconds: 0,
+      gpuTemperature: null,
+      netBytesTx: null,
+      netBytesRx: null,
+    };
   }
 }

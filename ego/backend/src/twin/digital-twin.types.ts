@@ -20,6 +20,7 @@ export interface HostTwinState {
   hostname: string;
   displayName: string;
   ip: string;
+  label?: string;
   status: TwinHostStatus;
   lastSeen: string;
   agentVersion: string;

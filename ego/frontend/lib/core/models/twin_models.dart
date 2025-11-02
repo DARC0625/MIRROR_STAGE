@@ -6,6 +6,8 @@ import 'package:collection/collection.dart';
 
 enum TwinHostStatus { online, stale, offline }
 
+const String _egoHostId = 'ego-hub';
+
 class TwinPosition {
   const TwinPosition({required this.x, required this.y, required this.z});
 
@@ -68,12 +70,14 @@ class TwinHost {
     required this.platform,
     required this.metrics,
     required this.position,
+    this.label,
     this.rack,
   });
 
   final String hostname;
   final String displayName;
   final String ip;
+  final String? label;
   final TwinHostStatus status;
   final DateTime lastSeen;
   final String agentVersion;
@@ -82,9 +86,13 @@ class TwinHost {
   final TwinPosition position;
   final String? rack;
 
-  bool get isCore => hostname == 'core-switch';
+  bool get isEgo => hostname == _egoHostId;
+  bool get isCore => isEgo;
 
   double get uptimeHours => metrics.uptimeSeconds / 3600.0;
+
+  String get displayLabel => label ?? '${displayName}
+$ip';
 
   factory TwinHost.fromJson(Map<String, dynamic> json) {
     final statusString = (json['status'] as String? ?? 'offline').toLowerCase();
@@ -92,6 +100,7 @@ class TwinHost {
       hostname: json['hostname'] as String? ?? 'unknown',
       displayName: json['displayName'] as String? ?? 'Unknown Host',
       ip: json['ip'] as String? ?? '0.0.0.0',
+      label: json['label'] as String?,
       status: TwinHostStatus.values.firstWhere(
         (value) => value.name == statusString,
         orElse: () => TwinHostStatus.offline,

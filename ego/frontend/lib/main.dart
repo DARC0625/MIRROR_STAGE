@@ -30,7 +30,7 @@ class MirrorStageApp extends StatelessWidget {
     );
 
     return MaterialApp(
-      title: 'MIRROR STAGE Digital Twin',
+      title: 'MIRROR STAGE',
       debugShowCheckedModeBanner: false,
       theme: baseTheme.copyWith(
         textTheme: GoogleFonts.ibmPlexSansTextTheme(baseTheme.textTheme).apply(
@@ -95,20 +95,30 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('MIRROR STAGE Digital Twin'),
+            title: const Text('MIRROR STAGE'),
             actions: [
-              _StatusChip(label: '내부망', value: '10.0.0.0/24'),
-              const SizedBox(width: 12),
-              _StatusChip(
-                label: '온라인 호스트',
-                value: '${frame.onlineHosts}/${frame.totalHosts}',
+              Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 6,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      const _StatusChip(label: '내부망', value: '10.0.0.0/24'),
+                      _StatusChip(
+                        label: '온라인 호스트',
+                        value: '${frame.onlineHosts}/${frame.totalHosts}',
+                      ),
+                      _StatusChip(
+                        label: '총 링크 부하',
+                        value: '${(frame.linkUtilization * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(width: 12),
-              _StatusChip(
-                label: '총 링크 부하',
-                value: '${(frame.linkUtilization * 100).clamp(0, 100).toStringAsFixed(0)}%',
-              ),
-              const SizedBox(width: 16),
             ],
           ),
           body: LayoutBuilder(
@@ -294,7 +304,7 @@ class _InsightPanel extends StatelessWidget {
               (host) => _ActivityTile(
                 timestamp: host.lastSeen.toLocal().toIso8601String(),
                 summary:
-                    '${host.displayName} — CPU ${host.metrics.cpuLoad.toStringAsFixed(1)}%, RAM ${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%',
+                    '${host.displayName} (${host.ip}) — CPU ${host.metrics.cpuLoad.toStringAsFixed(1)}%, RAM ${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%',
               ),
             ),
         ],
@@ -534,7 +544,7 @@ class _TwinScenePainter extends CustomPainter {
         TwinHostStatus.offline => Colors.redAccent,
       };
 
-      final radius = isCore ? 16.0 : 10.0 + host.metrics.cpuLoad.clamp(0, 100) * 0.06;
+      final radius = isCore ? 20.0 : 10.0 + host.metrics.cpuLoad.clamp(0, 100) * 0.06;
 
       final nodePaint = Paint()
         ..color = color.withOpacity(isCore ? 0.9 : 0.75)
@@ -555,7 +565,7 @@ class _TwinScenePainter extends CustomPainter {
 
       final textPainter = TextPainter(
         text: TextSpan(
-          text: host.displayName,
+          text: host.displayLabel,
           style: TextStyle(
             color: Colors.white.withOpacity(0.85),
             fontSize: 12,

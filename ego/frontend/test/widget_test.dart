@@ -19,7 +19,7 @@ void main() {
       ),
     );
 
-    expect(find.text('MIRROR STAGE Digital Twin'), findsOneWidget);
+    expect(find.text('MIRROR STAGE'), findsOneWidget);
     expect(find.textContaining('내부망'), findsOneWidget);
     expect(find.textContaining('온라인 호스트'), findsOneWidget);
   });

@@ -48,7 +48,7 @@ def loop_once(config: Dict[str, Any]) -> None:
 
 def main() -> None:
     config = load_config()
-    interval = float(config.get("interval_seconds", 5.0))
+    interval = float(config.get("interval_seconds", 2.0))
 
     print(f"[uplink] starting loop against {config['endpoint']} every {interval}s")
     while True:
