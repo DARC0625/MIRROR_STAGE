@@ -86,3 +86,9 @@ if (-not $BackendOnly) {
 }
 
 Write-Host "[EGO] 두 창을 닫으면 서비스가 중지됩니다." -ForegroundColor Green
+Write-Host "[EGO] 상태 확인을 위해 이 창을 유지합니다. 종료하려면 Enter 키를 누르세요." -ForegroundColor Yellow
+try {
+    Read-Host | Out-Null
+} catch {
+    # ignore when host is non-interactive
+}
