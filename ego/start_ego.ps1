@@ -3,6 +3,15 @@ Param(
     [switch]$BackendOnly
 )
 
+$encodingApplied = $false
+try {
+    chcp 65001 > $null
+    $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
+    $encodingApplied = $true
+} catch {
+    # 환경에 따라 chcp 실행이 실패할 수 있음 (로그용 플래그만 남김)
+}
+
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backendDir = Join-Path $root "backend"
 $frontendDir = Join-Path $root "frontend"
@@ -25,6 +34,10 @@ function Write-Log {
         # host may not support colors (e.g., executed without console)
         Write-Host $Message
     }
+}
+
+if ($encodingApplied) {
+    Write-Log "[EGO] Console encoding switched to UTF-8." ([ConsoleColor]::DarkGray)
 }
 
 function Resolve-Executable {
