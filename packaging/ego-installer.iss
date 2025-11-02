@@ -20,7 +20,7 @@ Source: "install-mirror-stage-ego.ps1"; DestDir: "{tmp}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File \"{tmp}\install-mirror-stage-ego.ps1\" -InstallRoot \"{app}\""; StatusMsg: "Installing MIRROR STAGE EGO..."; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File \"{tmp}\\install-mirror-stage-ego.ps1\" -InstallRoot \"{app}\""; StatusMsg: "Installing MIRROR STAGE EGO..."; Flags: runhidden
 
 [Icons]
 Name: "{group}\Start EGO Backend"; Filename: "cmd.exe"; Parameters: "/K cd /d {app}\MIRROR_STAGE\ego\backend && npm run start:dev";
