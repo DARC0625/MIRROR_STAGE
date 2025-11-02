@@ -58,6 +58,7 @@ function Ensure-NodeRuntime {
         [string]$ToolsDir
     )
 
+    Write-Log "[Installer] Ensuring Node.js runtime under $ToolsDir" ([ConsoleColor]::DarkGray)
     $nodeVersion = "20.17.0"
     $nodeArchiveName = "node-v$nodeVersion-win-x64.zip"
     $nodeDownloadUrl = "https://nodejs.org/dist/v$nodeVersion/$nodeArchiveName"
@@ -65,7 +66,9 @@ function Ensure-NodeRuntime {
     $nodeExe = Join-Path $nodeDir "node.exe"
     $npmCmd = Join-Path $nodeDir "npm.cmd"
 
-    if (Test-Path $nodeExe -and Test-Path $npmCmd) {
+    $hasNode = Test-Path $nodeExe
+    $hasNpm = Test-Path $npmCmd
+    if ($hasNode -and $hasNpm) {
         Write-Log "[Installer] Bundled Node.js already present at $nodeExe" ([ConsoleColor]::DarkGray)
         return @{ Node = $nodeExe; Npm = $npmCmd }
     }
@@ -111,13 +114,16 @@ function Ensure-FlutterSdk {
         [string]$ToolsDir
     )
 
+    Write-Log "[Installer] Ensuring Flutter SDK under $ToolsDir" ([ConsoleColor]::DarkGray)
     $flutterDir = Join-Path $ToolsDir "flutter"
     $flutterExe = Join-Path $flutterDir "bin\flutter.bat"
     $versionMarker = Join-Path $flutterDir "MIRROR_STAGE_VERSION.txt"
 
     $release = Get-LatestFlutterRelease
 
-    if (Test-Path $flutterExe -and (Test-Path $versionMarker)) {
+    $flutterExists = Test-Path $flutterExe
+    $versionFileExists = Test-Path $versionMarker
+    if ($flutterExists -and $versionFileExists) {
         $currentVersion = Get-Content $versionMarker -ErrorAction SilentlyContinue
         if ($currentVersion -eq $release.Version) {
             Write-Log "[Installer] Flutter $currentVersion already provisioned." ([ConsoleColor]::DarkGray)
