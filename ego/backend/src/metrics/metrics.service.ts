@@ -100,7 +100,7 @@ export class MetricsService {
       await this.hostMetricsRepository.save(entities);
     }
     if (historyEntities.length > 0) {
-      await this.metricSamplesRepository.insert(historyEntities);
+      await this.metricSamplesRepository.save(historyEntities);
     }
 
     return processed;
