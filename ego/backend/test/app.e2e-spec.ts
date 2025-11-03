@@ -1,14 +1,20 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { AppModule } from '../src/app.module';
+import { HostMetricEntity } from '../src/persistence/host-metric.entity';
+import type { Repository } from 'typeorm';
 
 describe('Digital Twin API (e2e)', () => {
   let app: INestApplication<App>;
+  let repository: Repository<HostMetricEntity>;
 
   beforeAll(async () => {
+    process.env.NODE_ENV = 'test';
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -17,6 +23,8 @@ describe('Digital Twin API (e2e)', () => {
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ZodValidationPipe());
     await app.init();
+
+    repository = app.get<Repository<HostMetricEntity>>(getRepositoryToken(HostMetricEntity));
   });
 
   afterAll(async () => {
@@ -64,5 +72,11 @@ describe('Digital Twin API (e2e)', () => {
     expect(host.status).toBe('online');
     expect(Array.isArray(body.links)).toBe(true);
     expect(body.links.some((link: any) => link.target === 'titan-01')).toBeTruthy();
+
+    const records = await repository.find();
+    expect(records).toHaveLength(1);
+    expect(records[0].hostname).toBe('titan-01');
+    expect(records[0].cpuLoad).toBeCloseTo(42.5);
+    expect(records[0].netBytesTx).toBe(1_250_000_000);
   });
 });

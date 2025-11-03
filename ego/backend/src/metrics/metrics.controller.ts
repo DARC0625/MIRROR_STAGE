@@ -9,8 +9,8 @@ export class MetricsController {
 
   @Post('batch')
   @HttpCode(HttpStatus.ACCEPTED)
-  ingestBatch(@Body(new ZodValidationPipe(MetricsBatchSchema)) body: MetricsBatch) {
-    const accepted = this.metricsService.ingestBatch(body.samples);
+  async ingestBatch(@Body(new ZodValidationPipe(MetricsBatchSchema)) body: MetricsBatch) {
+    const accepted = await this.metricsService.ingestBatch(body.samples);
     return {
       accepted,
       receivedAt: new Date().toISOString(),

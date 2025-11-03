@@ -34,6 +34,12 @@ npm run test:e2e     # E2E 테스트
 npm run test:cov     # 커버리지
 ```
 
+### 5. 데이터베이스
+- TypeORM 기반으로 메트릭 스냅샷을 영속화합니다. 기본값은 프로젝트 루트(`mirror_stage.db`)에 생성되는 SQLite 파일입니다.
+- 환경변수 `MIRROR_STAGE_DB_URL`을 지정하면 TimescaleDB/PostgreSQL URL로 자동 연결되며, `MIRROR_STAGE_DB_SSL=true` 설정 시 SSL을 사용합니다.
+- 테스트 실행 시에는 인메모리 SQLite(`:memory:`)가 자동 사용되므로 추가 설정 없이 CI에서 구동됩니다.
+- 파일 경로를 바꾸고 싶다면 `MIRROR_STAGE_SQLITE_PATH=/custom/path/mirror_stage.db` 를 지정하세요.
+
 ## REST API
 - `GET /api/health` : 상태 체크(200 ➝ `ok`).
 - `POST /api/metrics/batch` : 에이전트가 배치 전송한 메트릭 수집. `accepted` 카운터와 수신 시간을 반환하며 Zod 스키마로 유효성 검사합니다.
@@ -69,7 +75,7 @@ npm run test:cov     # 커버리지
   ```
 
 ## 현재 구현된 모듈
-- **MetricsModule**: Zod 검증을 통과한 샘플을 수집하여 디지털 트윈 엔진에 전달
+- **MetricsModule**: Zod 검증을 통과한 샘플을 디지털 트윈 엔진과 TypeORM 리포지토리 양쪽에 반영
 - **DigitalTwinModule**: 호스트 상태를 추적하고 BehaviorSubject로 스냅샷을 전파, Socket.IO 게이트웨이와 REST 컨트롤러 제공
 - **HealthController**: 간단한 헬스 체크
 

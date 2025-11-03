@@ -67,6 +67,15 @@
   - 설치 진행은 Inno Setup 진행 페이지 하단에 실시간 로그/상태 메시지로 표시됩니다. Node.js 다운로드 → Flutter 다운로드/압축 해제 → `npm ci`/`npm run build` → `flutter build web` 순서를 확인할 수 있으며 별도의 PowerShell 창은 더 이상 뜨지 않습니다.
   - 설치/런처 로그는 `%LOCALAPPDATA%\MIRROR_STAGE\logs` 아래 `install-YYYYMMDD-HHMMSS.log`, `launcher-YYYYMMDD-HHMMSS.log` 로 남습니다. 문제 발생 시 해당 로그와 설치 화면의 기록을 함께 확인하면 의존성 다운로드 실패, 빌드 오류 등의 원인을 빠르게 파악할 수 있습니다.
 
+### 개발용 2.5D 디지털 트윈 미리보기
+- EGO 백엔드를 실행한 뒤 샘플 메트릭을 주입하면 Flutter 2.5D 네트워크 뷰를 즉시 확인할 수 있습니다.
+- 개발용 시더: `node scripts/dev_seed_metrics.mjs`
+  - 기본 대상: `http://localhost:3000/api/metrics/batch`
+  - `--once` 옵션으로 단일 배치 전송, 기본은 5초 주기 루프
+  - `MIRROR_STAGE_METRICS_URL`, `MIRROR_STAGE_SEED_INTERVAL_MS` 환경변수로 엔드포인트·주기 오버라이드
+- 8개의 가상 호스트가 랙/좌표와 함께 생성되며 CPU·메모리·네트워크 지표를 주기적으로 변화시켜 2.5D 레이아웃, 링크 색상 변화를 빠르게 체험할 수 있습니다.
+- EGO 백엔드 메트릭은 TypeORM을 통해 SQLite(`mirror_stage.db`)에 기본 저장됩니다. TimescaleDB/PostgreSQL 사용 시 `MIRROR_STAGE_DB_URL` 환경변수를 지정하세요.
+
 필수/권장 사전 준비 사항
 - Node.js 20.x (EGO 백엔드). 예: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`
 - Flutter 3.35.5 이상 또는 FVM (EGO 프런트엔드)
