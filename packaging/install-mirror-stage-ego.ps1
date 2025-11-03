@@ -18,7 +18,7 @@ Ensure-Directory -Path $logDir
 $logFile = Join-Path $logDir ("install-" + (Get-Date).ToString("yyyyMMdd-HHmmss") + ".log")
 $script:ProgressLogPath = $null
 $script:ProgressStep = 0
-$script:ProgressTotal = 8
+$script:ProgressTotal = 9
 
 if ($ProgressLogPath) {
     try {
@@ -366,6 +366,68 @@ function Ensure-FlutterSdk {
     return @{ Flutter = $flutterExe; Version = $release.Version }
 }
 
+function Test-SymlinkSupport {
+    $testRoot = Join-Path $env:TEMP ("mirror_stage_symlink_test_" + [guid]::NewGuid().ToString("N"))
+    $target = Join-Path $testRoot "target"
+    $link = Join-Path $testRoot "link"
+    try {
+        New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        New-Item -ItemType SymbolicLink -Path $link -Target $target -ErrorAction Stop | Out-Null
+        return $true
+    } catch {
+        return $false
+    } finally {
+        try { Remove-Item -Path $testRoot -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+    }
+}
+
+function Ensure-SymlinkSupport {
+    if (Test-SymlinkSupport) {
+        Write-Log "[Installer] Windows symbolic link support verified." ([ConsoleColor]::DarkGray)
+        return
+    }
+
+    $isElevated = $false
+    try {
+        $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+        $isElevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        $isElevated = $false
+    }
+
+    if ($isElevated) {
+        Write-Log "[Installer] Attempting to enable Developer Mode (symbolic link privilege)." ([ConsoleColor]::Yellow)
+        try {
+            $keyPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+            if (-not (Test-Path $keyPath)) {
+                New-Item -Path $keyPath -Force | Out-Null
+            }
+            New-ItemProperty -Path $keyPath -Name "AllowDevelopmentWithoutDevLicense" -Value 1 -PropertyType DWord -Force | Out-Null
+            New-ItemProperty -Path $keyPath -Name "AllowAllTrustedApps" -Value 1 -PropertyType DWord -Force | Out-Null
+        } catch {
+            Write-Log "[Installer] Failed to toggle Developer Mode automatically: $_" ([ConsoleColor]::Yellow)
+        }
+
+        Start-Sleep -Seconds 2
+        if (Test-SymlinkSupport) {
+            Write-Log "[Installer] Symbolic link support became available after enabling Developer Mode." ([ConsoleColor]::DarkGray)
+            return
+        }
+    }
+
+    if (-not $env:CI) {
+        Write-Log "[Installer] Developer Mode is disabled. Opening Windows settings: start ms-settings:developers" ([ConsoleColor]::Yellow)
+        try {
+            Start-Process "ms-settings:developers" | Out-Null
+        } catch {
+            Write-Log "[Installer] Unable to launch Developer Mode settings automatically: $_" ([ConsoleColor]::Yellow)
+        }
+    }
+
+    throw "Symbolic links are not permitted for the current user. Enable Developer Mode (Settings > Privacy & security > For developers) or rerun this installer from an elevated PowerShell session after granting the privilege."
+}
+
 function Invoke-LoggedProcess {
     param(
         [string]$FilePath,
@@ -491,6 +553,9 @@ try {
 
     Start-Step "Building backend application (npm run build)"
     Invoke-LoggedProcess -FilePath $node.Npm -Arguments "run build" -WorkingDirectory $backendDir -Description "npm run build (backend)"
+
+    Start-Step "Validating Windows symbolic link support"
+    Ensure-SymlinkSupport
 
     Start-Step "Configuring Flutter for web builds"
     Invoke-LoggedProcess -FilePath $flutter.Flutter -Arguments "config --enable-web" -WorkingDirectory $frontendDir -Description "flutter config --enable-web"
