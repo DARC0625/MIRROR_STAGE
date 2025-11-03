@@ -379,53 +379,56 @@ function Invoke-LoggedProcess {
     Write-Log "[Installer] $Description" ([ConsoleColor]::DarkGray)
     Write-Log "[Installer]   WorkingDirectory: $WorkingDirectory" ([ConsoleColor]::DarkGray)
     Write-Log "[Installer]   CommandLine: $commandLine" ([ConsoleColor]::DarkGray)
+
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $FilePath
     $psi.Arguments = $Arguments
     $psi.WorkingDirectory = $WorkingDirectory
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
-    $process = New-Object System.Diagnostics.Process
+
+    $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $psi
-
-    $stdoutHandler = {
-        param($sender, $eventArgs)
-        if ($eventArgs.Data) {
-            $line = "[Installer][$Description][stdout] $($eventArgs.Data)"
-            Write-Log $line ([ConsoleColor]::DarkGray) -SkipBroadcast
-        }
-    }
-    $stderrHandler = {
-        param($sender, $eventArgs)
-        if ($eventArgs.Data) {
-            $line = "[Installer][$Description][stderr] $($eventArgs.Data)"
-            Write-Log $line ([ConsoleColor]::Yellow) -SkipBroadcast
-            Write-ProgressRecord -Kind 'ERROR' -Payload $eventArgs.Data
-        }
-    }
-
-    $null = $process.add_OutputDataReceived($stdoutHandler)
-    $null = $process.add_ErrorDataReceived($stderrHandler)
 
     if (-not $process.Start()) {
         throw "$Description failed to start (command: $commandLine)"
     }
 
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
-
+    $stdout = $process.StandardOutput
+    $stderr = $process.StandardError
     $heartbeatInterval = [TimeSpan]::FromSeconds(20)
     $lastHeartbeat = Get-Date
-    while (-not $process.HasExited) {
-        Start-Sleep -Seconds 1
-        if (((Get-Date) - $lastHeartbeat) -ge $heartbeatInterval) {
-            Write-Log "[Installer]   $Description is still running..." ([ConsoleColor]::DarkGray) -SkipBroadcast
-            $lastHeartbeat = Get-Date
+
+    while (-not $process.HasExited -or -not $stdout.EndOfStream -or -not $stderr.EndOfStream) {
+        while (-not $stdout.EndOfStream) {
+            $line = $stdout.ReadLine()
+            if ($null -ne $line) {
+                Write-Log "[Installer][$Description][stdout] $line" ([ConsoleColor]::DarkGray) -SkipBroadcast
+            }
+        }
+
+        while (-not $stderr.EndOfStream) {
+            $line = $stderr.ReadLine()
+            if ($null -ne $line) {
+                Write-Log "[Installer][$Description][stderr] $line" ([ConsoleColor]::Yellow) -SkipBroadcast
+                Write-ProgressRecord -Kind 'ERROR' -Payload $line
+            }
+        }
+
+        if (-not $process.HasExited) {
+            if (((Get-Date) - $lastHeartbeat) -ge $heartbeatInterval) {
+                Write-Log "[Installer]   $Description is still running..." ([ConsoleColor]::DarkGray) -SkipBroadcast
+                $lastHeartbeat = Get-Date
+            }
+            Start-Sleep -Milliseconds 200
         }
     }
 
+    $process.WaitForExit()
     $endedAt = Get-Date
     $duration = $endedAt - $startedAt
     Write-Log "[Installer]   ExitCode: $($process.ExitCode) (Duration: $([Math]::Round($duration.TotalSeconds, 2)) s)" ([ConsoleColor]::DarkGray)
@@ -510,5 +513,13 @@ try {
     Write-Log "[Installer] Error: $_" ([ConsoleColor]::Red)
     Write-Log "See $logFile for details." ([ConsoleColor]::Red)
     Publish-Status "Installation failed. See log for details."
+    if (-not $env:CI) {
+        try {
+            Write-Host "" -NoNewline
+            [void](Read-Host "Press Enter to close this window")
+        } catch {
+            # Ignore input errors on non-interactive hosts
+        }
+    }
     throw
 }
