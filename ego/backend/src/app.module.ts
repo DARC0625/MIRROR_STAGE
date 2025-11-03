@@ -9,6 +9,9 @@ import { AppService } from './app.service';
 import { MetricsModule } from './metrics/metrics.module';
 import { DigitalTwinModule } from './twin/digital-twin.module';
 import { HostMetricEntity } from './persistence/host-metric.entity';
+import { HostMetricSampleEntity } from './persistence/host-metric-sample.entity';
+import { AlertEntity } from './alerts/alert.entity';
+import { AlertsModule } from './alerts/alerts.module';
 import { CacheModule } from './cache/cache.module';
 import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
 
@@ -44,7 +47,7 @@ import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
           return {
             type: 'postgres',
             url: postgresUrl,
-            entities: [HostMetricEntity],
+            entities: [HostMetricEntity, HostMetricSampleEntity, AlertEntity],
             synchronize: true,
             ssl: config.get('MIRROR_STAGE_DB_SSL') === 'true',
           };
@@ -58,7 +61,7 @@ import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
         return {
           type: 'sqlite',
           database: sqlitePath,
-          entities: [HostMetricEntity],
+          entities: [HostMetricEntity, HostMetricSampleEntity, AlertEntity],
           synchronize: true,
         };
       },
@@ -67,6 +70,7 @@ import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
     DigitalTwinModule,
     MetricsModule,
     EgoMonitorModule,
+    AlertsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

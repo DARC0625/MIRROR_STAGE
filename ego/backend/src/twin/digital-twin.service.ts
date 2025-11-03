@@ -113,6 +113,11 @@ export class DigitalTwinService {
     return this.twinSubject.getValue();
   }
 
+  getHostTwinState(hostname: string): HostTwinState | undefined {
+    const snapshot = this.twinSubject.getValue();
+    return snapshot.hosts.find((host) => host.hostname === hostname);
+  }
+
 
   private buildSnapshot(): TwinState {
     const now = Date.now();

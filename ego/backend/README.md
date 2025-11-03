@@ -48,6 +48,7 @@ npm run test:cov     # 커버리지
 - `GET /api/health` : 상태 체크(200 ➝ `ok`).
 - `POST /api/metrics/batch` : 에이전트가 배치 전송한 메트릭 수집. `accepted` 카운터와 수신 시간을 반환하며 Zod 스키마로 유효성 검사합니다.
 - `GET /api/twin/state` : 현재 디지털 트윈 스냅샷(JSON)
+- `GET /api/alerts/active` : 임계치를 초과한 활성 알람 목록
 
 ## 실시간 채널
 - Socket.IO 네임스페이스: `ws://<host>:3000/digital-twin`

@@ -35,7 +35,7 @@ describe('Digital Twin API (e2e)', () => {
     await request(app.getHttpServer()).get('/api/health').expect(200).expect('ok');
   });
 
-  it('ingests metrics and exposes digital twin state', async () => {
+  it('ingests metrics, raises alerts, and exposes digital twin state', async () => {
     const payload = {
       samples: [
         {
@@ -78,5 +78,32 @@ describe('Digital Twin API (e2e)', () => {
     expect(records[0].hostname).toBe('titan-01');
     expect(records[0].cpuLoad).toBeCloseTo(42.5);
     expect(records[0].netBytesTx).toBe(1_250_000_000);
+
+    const alertPayload = {
+      samples: [
+        {
+          hostname: 'titan-01',
+          timestamp: new Date().toISOString(),
+          cpu_load: 95,
+          memory_used_percent: 96,
+          load_average: 4.2,
+          uptime_seconds: 8200,
+          agent_version: '0.1.0-dev',
+          platform: 'Linux-x86_64',
+          net_bytes_tx: 2_500_000_000,
+          net_bytes_rx: 2_100_000_000,
+        },
+      ],
+    };
+
+    await request(app.getHttpServer())
+      .post('/api/metrics/batch')
+      .send(alertPayload)
+      .expect(202);
+
+    const alertsResponse = await request(app.getHttpServer()).get('/api/alerts/active').expect(200);
+    expect(Array.isArray(alertsResponse.body)).toBe(true);
+    expect(alertsResponse.body.length).toBeGreaterThanOrEqual(1);
+    expect(alertsResponse.body[0].hostname).toBe('titan-01');
   });
 });
