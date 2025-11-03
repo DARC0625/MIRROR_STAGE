@@ -35,10 +35,9 @@ npm run test:cov     # 커버리지
 ```
 
 ### 5. 데이터베이스
-- TypeORM 기반으로 메트릭 스냅샷을 영속화합니다. 기본값은 프로젝트 루트(`mirror_stage.db`)에 생성되는 SQLite 파일입니다.
-- 환경변수 `MIRROR_STAGE_DB_URL`을 지정하면 TimescaleDB/PostgreSQL URL로 자동 연결되며, `MIRROR_STAGE_DB_SSL=true` 설정 시 SSL을 사용합니다.
-- 테스트 실행 시에는 인메모리 SQLite(`:memory:`)가 자동 사용되므로 추가 설정 없이 CI에서 구동됩니다.
-- 파일 경로를 바꾸고 싶다면 `MIRROR_STAGE_SQLITE_PATH=/custom/path/mirror_stage.db` 를 지정하세요.
+- 기본 로컬 개발은 sqlite를 통해 동작하지만, `.env`에 `MIRROR_STAGE_DB_URL`을 지정하면 TimescaleDB/PostgreSQL로 자동 전환됩니다.
+- `docker compose up -d timescaledb redis`로 TimescaleDB/Redis 개발 클러스터를 띄운 뒤 `MIRROR_STAGE_DB_URL=postgresql://mirror_stage:mirror_stage_password@localhost:5432/mirror_stage`, `MIRROR_STAGE_REDIS_URL=redis://localhost:6379`를 설정하세요.
+- 테스트 실행(`npm test`, `npm run test:e2e`) 시에는 자동으로 인메모리 SQLite(`:memory:`)와 메모리 캐시를 사용합니다.
 
 ### 6. EGO 자가 모니터링
 - `EgoMonitorService`가 `systeminformation` 패키지로 EGO 서버의 CPU/메모리/네트워크 용량을 주기적으로 수집해 백엔드와 디지털 트윈에 반영합니다.

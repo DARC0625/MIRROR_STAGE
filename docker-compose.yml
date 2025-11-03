@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  timescaledb:
+    image: timescale/timescaledb-ha:pg16-latest
+    container_name: mirror-stage-timescaledb
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=mirror_stage
+      - POSTGRES_PASSWORD=mirror_stage_password
+      - POSTGRES_DB=mirror_stage
+      - TS_TUNE_MAX_CONNS=200
+      - TS_TUNE_MEMORY=2GB
+    ports:
+      - '5432:5432'
+    volumes:
+      - timescaledb_data:/home/postgres/pgdata/data
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: mirror-stage-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    command: >
+      redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redis_data:/data
+
+volumes:
+  timescaledb_data:
+  redis_data:

@@ -1,5 +1,7 @@
 import { randomUUID } from 'crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import type { Cache } from 'cache-manager';
+import { CACHE_TOKEN } from '../cache/cache.module';
 import { BehaviorSubject } from 'rxjs';
 import type { MetricSample } from '../metrics/metrics.dto';
 import type { HostTwinState, TwinLink, TwinState, TwinPosition, HostMetricsSummary, TwinHostStatus } from './digital-twin.types';
@@ -35,6 +37,8 @@ export class DigitalTwinService {
   private readonly twinId = `project5-${randomUUID().slice(0, 10)}`;
 
   readonly updates$ = this.twinSubject.asObservable();
+
+  constructor(@Optional() @Inject(CACHE_TOKEN) private readonly cache?: Cache) {}
 
   ingestSample(sample: MetricSample): void {
     const hostname = sample.hostname.trim();
@@ -102,6 +106,7 @@ export class DigitalTwinService {
 
     const snapshot = this.buildSnapshot();
     this.twinSubject.next(snapshot);
+    void this.persistSnapshot(snapshot);
   }
 
   getSnapshot(): TwinState {
@@ -175,6 +180,17 @@ export class DigitalTwinService {
       hosts: renderedHosts,
       links,
     };
+  }
+
+  private async persistSnapshot(snapshot: TwinState): Promise<void> {
+    try {
+      if (!this.cache) {
+        return;
+      }
+      await this.cache.set('digital_twin:latest', snapshot, 5_000);
+    } catch (error) {
+      this.logger.warn(`Failed to cache digital twin snapshot: ${error}`);
+    }
   }
 
   private computePosition(index: number, total: number, radius = 14): TwinPosition {

@@ -49,6 +49,7 @@
 - Redis:
   - Caching latest snapshot for fast dashboard render.
   - Stores WebSocket session info and pub/sub for UI notifications.
+- 개발 환경에서는 루트 `docker-compose.yml`로 TimescaleDB + Redis를 즉시 기동할 수 있습니다.
 - Object Storage:
   - MinIO in self-hosted mode for logs, agent bundles, config backups.
 

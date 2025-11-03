@@ -43,6 +43,7 @@ PYTHONPATH=src python -m agent.main --once
 
 ## 연속 업링크
 - `config.json`에 백엔드 엔드포인트와 좌표/랙 정보를 정의.
+- 링크 용량 계산을 위해 `tags.primary_interface_speed_mbps`(Mbps) 를 지정하거나, 에이전트가 자동 측정한 NIC 속도를 사용합니다.
 - (선택) 원클릭 설치:
   ```bash
   curl -fsSLo install_reflector.sh https://raw.githubusercontent.com/DARC0625/MIRROR_STAGE/main/scripts/install_reflector.sh

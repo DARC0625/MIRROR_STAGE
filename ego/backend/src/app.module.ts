@@ -9,6 +9,7 @@ import { AppService } from './app.service';
 import { MetricsModule } from './metrics/metrics.module';
 import { DigitalTwinModule } from './twin/digital-twin.module';
 import { HostMetricEntity } from './persistence/host-metric.entity';
+import { CacheModule } from './cache/cache.module';
 import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
 
 @Module({
@@ -62,6 +63,7 @@ import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
         };
       },
     }),
+    CacheModule,
     DigitalTwinModule,
     MetricsModule,
     EgoMonitorModule,
