@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'core/models/twin_models.dart';
 import 'core/services/twin_channel.dart';
 
+enum TwinViewportMode { topology, heatmap }
+
 void main() {
   runApp(const MirrorStageApp());
 }
@@ -39,7 +41,7 @@ class MirrorStageApp extends StatelessWidget {
         ),
         appBarTheme: AppBarTheme(
           backgroundColor: const Color(0xFF05080D),
-          foregroundColor: colorScheme.onBackground,
+          foregroundColor: colorScheme.onSurface,
           elevation: 0,
         ),
       ),
@@ -62,6 +64,8 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
   late final bool _ownsChannel;
   late final Stream<TwinStateFrame> _stream;
   TwinStateFrame? _lastFrame;
+  TwinViewportMode _viewportMode = TwinViewportMode.topology;
+  String? _selectedHostName;
 
   @override
   void initState() {
@@ -79,6 +83,18 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     super.dispose();
   }
 
+  void _setViewportMode(TwinViewportMode mode) {
+    if (_viewportMode == mode) return;
+    setState(() => _viewportMode = mode);
+  }
+
+  void _selectHost(String hostname) {
+    if (_selectedHostName == hostname) {
+      return;
+    }
+    setState(() => _selectedHostName = hostname);
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<TwinStateFrame>(
@@ -93,6 +109,23 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
             ? candidate!
             : (_lastFrame ?? TwinStateFrame.empty());
 
+        TwinHost? selectedHost =
+            _selectedHostName != null ? frame.hostByName(_selectedHostName!) : null;
+        if (selectedHost == null && frame.hosts.isNotEmpty) {
+          selectedHost = frame.hosts.first;
+          final fallbackName = selectedHost.hostname;
+          if (_selectedHostName != fallbackName) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              if (_selectedHostName != fallbackName) {
+                setState(() => _selectedHostName = fallbackName);
+              }
+            });
+          }
+        }
+
+        final heatMax = frame.maxCpuTemperature > 0 ? frame.maxCpuTemperature : 100.0;
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('MIRROR STAGE'),
@@ -100,7 +133,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
               Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 440),
+                  constraints: const BoxConstraints(maxWidth: 520),
                   child: Wrap(
                     spacing: 12,
                     runSpacing: 6,
@@ -112,17 +145,23 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                         value: '${frame.onlineHosts}/${frame.totalHosts}',
                       ),
                       _StatusChip(
-                        label: '총 링크 부하',
-                        value: '${(frame.linkUtilization * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                        label: '평균 CPU',
+                        value: '${frame.averageCpuLoad.toStringAsFixed(1)}%',
+                      ),
+                      _StatusChip(
+                        label: '메모리 사용',
+                        value: frame.totalMemoryCapacityGb > 0
+                            ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
+                            : '${frame.averageMemoryLoad.toStringAsFixed(1)}%',
                       ),
                       _StatusChip(
                         label: '총 스루풋',
                         value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
                       ),
                       _StatusChip(
-                        label: '총 링크 용량',
-                        value: frame.totalLinkCapacity > 0
-                            ? '${frame.totalLinkCapacity.toStringAsFixed(2)} Gbps'
+                        label: '피크 온도',
+                        value: frame.maxCpuTemperature > 0
+                            ? '${frame.maxCpuTemperature.toStringAsFixed(1)}℃'
                             : 'N/A',
                       ),
                     ],
@@ -138,14 +177,26 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
               if (isWide) {
                 return Row(
                   children: [
-                    _Sidebar(frame: frame),
+                    _Sidebar(
+                      frame: frame,
+                      mode: _viewportMode,
+                      onModeChange: _setViewportMode,
+                    ),
                     Expanded(
                       child: _TwinViewport(
                         frame: frame,
                         height: constraints.maxHeight,
+                        mode: _viewportMode,
+                        selectedHost: selectedHost?.hostname,
+                        heatMax: heatMax,
+                        onSelectHost: _selectHost,
                       ),
                     ),
-                    _InsightPanel(frame: frame),
+                    _InsightPanel(
+                      frame: frame,
+                      selectedHost: selectedHost,
+                      onSelectHost: _selectHost,
+                    ),
                   ],
                 );
               }
@@ -156,9 +207,20 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                     child: _TwinViewport(
                       frame: frame,
                       height: constraints.maxHeight * .65,
+                      mode: _viewportMode,
+                      selectedHost: selectedHost?.hostname,
+                      heatMax: heatMax,
+                      onSelectHost: _selectHost,
                     ),
                   ),
-                  _InsightPanel(frame: frame),
+                  SizedBox(
+                    height: constraints.maxHeight * .35,
+                    child: _InsightPanel(
+                      frame: frame,
+                      selectedHost: selectedHost,
+                      onSelectHost: _selectHost,
+                    ),
+                  ),
                 ],
               );
             },
@@ -170,14 +232,30 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
 }
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.frame});
+  const _Sidebar({
+    required this.frame,
+    required this.mode,
+    required this.onModeChange,
+  });
 
   final TwinStateFrame frame;
+  final TwinViewportMode mode;
+  final ValueChanged<TwinViewportMode> onModeChange;
 
   @override
   Widget build(BuildContext context) {
+    final cpuLoad = frame.averageCpuLoad.clamp(0, 100).toDouble();
+    final memoryPercent = frame.memoryUtilizationPercent.clamp(0, 100).toDouble();
+    final throughput = frame.estimatedThroughput;
+    final capacity = frame.totalLinkCapacity;
+    final averageTemp = frame.averageCpuTemperature;
+    final peakTemp = frame.maxCpuTemperature;
+    final memorySummary = frame.totalMemoryCapacityGb > 0
+        ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
+        : '${frame.averageMemoryLoad.toStringAsFixed(1)}%';
+
     return Container(
-      width: 280,
+      width: 300,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       decoration: const BoxDecoration(
         border: Border(
@@ -189,74 +267,109 @@ class _Sidebar extends StatelessWidget {
           end: Alignment.bottomCenter,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '실시간 개요',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 24),
-          _MetricTile(
-            label: '평균 CPU 사용률',
-            value: '${frame.averageCpuLoad.toStringAsFixed(1)}%',
-          ),
-          _MetricTile(
-            label: '평균 메모리 사용률',
-            value: '${frame.averageMemoryLoad.toStringAsFixed(1)}%',
-          ),
-          _MetricTile(
-            label: '실시간 스루풋',
-            value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
-            caption: frame.maxHostThroughput > 0
-                ? '호스트 최대 ${frame.maxHostThroughput.toStringAsFixed(2)} Gbps'
-                : null,
-          ),
-          _MetricTile(
-            label: '평균 링크 활용률',
-            value: '${(frame.linkUtilization * 100).clamp(0, 100).toStringAsFixed(1)}%',
-            caption: frame.totalLinkCapacity > 0
-                ? '총 용량 ${frame.totalLinkCapacity.toStringAsFixed(2)} Gbps'
-                : null,
-          ),
-          const SizedBox(height: 32),
-          Text(
-            'VR 씬 전환',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Colors.white70,
-                  letterSpacing: 0.2,
-                ),
-          ),
-          const SizedBox(height: 12),
-          ...[
-            '글로벌 토폴로지',
-            '랙 / 룸 뷰',
-            '온도 히트맵',
-            '자동화 타임라인',
-          ].map(
-            (entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _NavButton(label: entry),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '실시간 개요',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
-          ),
-          const Spacer(),
-          Text(
-            '생성 시각: ${frame.generatedAt.toLocal().toIso8601String()}',
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
-          ),
-        ],
+            const SizedBox(height: 24),
+            Center(
+              child: _AnalogGauge(
+                label: '평균 CPU',
+                value: cpuLoad,
+                maxValue: 100,
+                units: '%',
+                decimals: 1,
+                subtitle: averageTemp > 0 ? '평균 온도 ${averageTemp.toStringAsFixed(1)}℃' : null,
+              ),
+            ),
+            const SizedBox(height: 28),
+            Center(
+              child: _AnalogGauge(
+                label: '메모리 사용률',
+                value: memoryPercent,
+                maxValue: 100,
+                units: '%',
+                subtitle: memorySummary,
+                startColor: const Color(0xFF38BDF8),
+                endColor: Colors.deepOrangeAccent,
+                size: 180,
+              ),
+            ),
+            const SizedBox(height: 28),
+            _MetricTile(
+              label: '총 스루풋',
+              value: '${throughput.toStringAsFixed(2)} Gbps',
+              caption: capacity > 0 ? '총 용량 ${capacity.toStringAsFixed(2)} Gbps' : null,
+            ),
+            _MetricTile(
+              label: '링크 활용률',
+              value: '${(frame.linkUtilization * 100).clamp(0.0, 100.0).toStringAsFixed(1)}%',
+            ),
+            _MetricTile(
+              label: '피크 온도',
+              value: peakTemp > 0 ? '${peakTemp.toStringAsFixed(1)}℃' : 'N/A',
+            ),
+            const SizedBox(height: 32),
+            Text(
+              '뷰 전환',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Colors.white70,
+                    letterSpacing: 0.2,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            _NavButton(
+              label: '글로벌 토폴로지',
+              isActive: mode == TwinViewportMode.topology,
+              onPressed: () => onModeChange(TwinViewportMode.topology),
+            ),
+            const SizedBox(height: 10),
+            _NavButton(
+              label: '온도 히트맵',
+              isActive: mode == TwinViewportMode.heatmap,
+              onPressed: () => onModeChange(TwinViewportMode.heatmap),
+            ),
+            const SizedBox(height: 10),
+            _NavButton(
+              label: '자동화 타임라인',
+              isActive: false,
+              onPressed: null,
+              isEnabled: false,
+            ),
+            const SizedBox(height: 32),
+            Text(
+              '생성 시각: ${frame.generatedAt.toLocal().toIso8601String()}',
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _TwinViewport extends StatelessWidget {
-  const _TwinViewport({required this.frame, required this.height});
+  const _TwinViewport({
+    required this.frame,
+    required this.height,
+    required this.mode,
+    required this.selectedHost,
+    required this.heatMax,
+    required this.onSelectHost,
+  });
 
   final TwinStateFrame frame;
   final double height;
+  final TwinViewportMode mode;
+  final String? selectedHost;
+  final double heatMax;
+  final ValueChanged<String> onSelectHost;
 
   @override
   Widget build(BuildContext context) {
@@ -273,9 +386,45 @@ class _TwinViewport extends StatelessWidget {
               end: Alignment.bottomRight,
             ),
           ),
-          child: CustomPaint(
-            painter: _TwinScenePainter(frame),
-            child: const SizedBox.expand(),
+          child: LayoutBuilder(
+            builder: (context, viewportConstraints) {
+              final size = Size(
+                viewportConstraints.maxWidth,
+                viewportConstraints.maxHeight,
+              );
+              final center = size.center(Offset.zero);
+              final scale = twinScaleFactor(frame, size);
+
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (details) {
+                  final tap = details.localPosition;
+                  TwinHost? nearest;
+                  double minDistance = double.infinity;
+                  for (final host in frame.hosts) {
+                    final point = twinProjectPoint(host.position, center, scale);
+                    final radius = hostBubbleRadius(host);
+                    final distance = (tap - point).distance;
+                    if (distance <= radius + 14 && distance < minDistance) {
+                      nearest = host;
+                      minDistance = distance;
+                    }
+                  }
+                  if (nearest != null) {
+                    onSelectHost(nearest.hostname);
+                  }
+                },
+                child: CustomPaint(
+                  painter: _TwinScenePainter(
+                    frame,
+                    mode: mode,
+                    selectedHost: selectedHost,
+                    heatMax: heatMax,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -284,15 +433,23 @@ class _TwinViewport extends StatelessWidget {
 }
 
 class _InsightPanel extends StatelessWidget {
-  const _InsightPanel({required this.frame});
+  const _InsightPanel({
+    required this.frame,
+    required this.selectedHost,
+    required this.onSelectHost,
+  });
 
   final TwinStateFrame frame;
+  final TwinHost? selectedHost;
+  final ValueChanged<String> onSelectHost;
 
   @override
   Widget build(BuildContext context) {
-    final topHosts = frame.activeHosts.take(4).toList();
+    final hosts = frame.hosts;
+    final TwinHost? activeSelection = selectedHost ?? (hosts.isNotEmpty ? hosts.first : null);
+
     return Container(
-      width: 320,
+      width: 340,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       decoration: const BoxDecoration(
         border: Border(
@@ -308,51 +465,42 @@ class _InsightPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '상위 리소스 소비 호스트',
+            '네트워크 노드',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
           ),
           const SizedBox(height: 18),
-          if (topHosts.isEmpty)
-            const _ActivityTile(
-              timestamp: '대기 중',
-              summary: '텔레메트리를 수신하면 여기에 최신 이벤트가 표시됩니다.',
+          if (hosts.isEmpty)
+            const Expanded(
+              child: _ActivityTile(
+                timestamp: '대기 중',
+                summary: '텔레메트리 수신 대기중입니다. REFLECTOR 노드가 온라인인지 확인하세요.',
+              ),
             )
-          else
-            ...topHosts.map(
-              (host) => _ActivityTile(
-                timestamp: host.lastSeen.toLocal().toIso8601String(),
-                summary: _hostSummary(host),
+          else ...[
+            Expanded(
+              child: ListView.separated(
+                itemCount: hosts.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final host = hosts[index];
+                  final bool isSelected = activeSelection?.hostname == host.hostname;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => onSelectHost(host.hostname),
+                    child: _HostListTile(host: host, isSelected: isSelected),
+                  );
+                },
               ),
             ),
+            const SizedBox(height: 20),
+            if (activeSelection != null)
+              _HostDetailCard(host: activeSelection),
+          ],
         ],
       ),
     );
-  }
-
-  String _hostSummary(TwinHost host) {
-    final cpu = host.metrics.cpuLoad.toStringAsFixed(1);
-    final memory = host.metrics.memoryUsedPercent.toStringAsFixed(1);
-    final throughput = host.metrics.netThroughputGbps;
-    final capacity = host.metrics.netCapacityGbps;
-
-    final segments = <String>[
-      '${host.displayName} (${host.ip})',
-      'CPU $cpu%',
-      'RAM $memory%',
-    ];
-
-    if (throughput != null && throughput > 0) {
-      final head = throughput.toStringAsFixed(2);
-      String netText = 'NET $head Gbps';
-      if (capacity != null && capacity > 0) {
-        netText = 'NET $head / ${capacity.toStringAsFixed(2)} Gbps';
-      }
-      segments.add(netText);
-    }
-
-    return segments.join(' — ');
   }
 }
 
@@ -395,22 +543,208 @@ class _MetricTile extends StatelessWidget {
   }
 }
 
-class _NavButton extends StatelessWidget {
-  const _NavButton({required this.label});
+class _AnalogGauge extends StatefulWidget {
+  const _AnalogGauge({
+    required this.label,
+    required this.value,
+    required this.maxValue,
+    this.units = '',
+    this.decimals = 1,
+    this.subtitle,
+    this.size = 170,
+    this.startColor = const Color(0xFF22D3EE),
+    this.endColor = Colors.deepOrangeAccent,
+  });
 
   final String label;
+  final double value;
+  final double maxValue;
+  final String units;
+  final int decimals;
+  final String? subtitle;
+  final double size;
+  final Color startColor;
+  final Color endColor;
+
+  @override
+  State<_AnalogGauge> createState() => _AnalogGaugeState();
+}
+
+class _AnalogGaugeState extends State<_AnalogGauge> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      lowerBound: 0,
+      upperBound: 1,
+      value: _normalized(widget.value),
+      duration: const Duration(milliseconds: 600),
+    );
+  }
+
+  double _normalized(double value) {
+    if (widget.maxValue <= 0) return 0;
+    return (value / widget.maxValue).clamp(0.0, 1.0);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnalogGauge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final target = _normalized(widget.value);
+    if ((_controller.value - target).abs() < 0.001) {
+      return;
+    }
+    _controller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final valueText = widget.value.toStringAsFixed(widget.decimals);
+    final units = widget.units.isNotEmpty ? ' ${widget.units}' : '';
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.label,
+          style: textTheme.titleSmall?.copyWith(
+            color: Colors.white70,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: widget.size,
+          height: widget.size,
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              final normalized = _controller.value;
+              final color = Color.lerp(widget.startColor, widget.endColor, normalized) ?? widget.startColor;
+              return CustomPaint(
+                painter: _GaugePainter(normalized: normalized, color: color),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '$valueText$units',
+          style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        if (widget.subtitle != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              widget.subtitle!,
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _GaugePainter extends CustomPainter {
+  const _GaugePainter({required this.normalized, required this.color});
+
+  final double normalized;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2 - 12;
+    const startAngle = 3 * math.pi / 4;
+    const sweepAngle = 3 * math.pi / 2;
+    const stroke = 10.0;
+
+    final arcRect = Rect.fromCircle(center: center, radius: radius);
+
+    final backgroundPaint = Paint()
+      ..color = const Color(0xFF1C2A3A)
+      ..strokeWidth = stroke
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawArc(arcRect, startAngle, sweepAngle, false, backgroundPaint);
+
+    final progressPaint = Paint()
+      ..color = color
+      ..strokeWidth = stroke
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawArc(arcRect, startAngle, sweepAngle * normalized, false, progressPaint);
+
+    final pointerPaint = Paint()
+      ..color = color
+      ..strokeWidth = stroke * 0.6
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final pointerAngle = startAngle + sweepAngle * normalized;
+    final pointerLength = radius - stroke * 0.8;
+    final pointerOffset = Offset(
+      center.dx + pointerLength * math.cos(pointerAngle),
+      center.dy + pointerLength * math.sin(pointerAngle),
+    );
+    canvas.drawLine(center, pointerOffset, pointerPaint);
+    canvas.drawCircle(center, stroke * 0.7, Paint()..color = Colors.white24);
+  }
+
+  @override
+  bool shouldRepaint(covariant _GaugePainter oldDelegate) =>
+      oldDelegate.normalized != normalized || oldDelegate.color != color;
+}
+
+class _NavButton extends StatelessWidget {
+  const _NavButton({
+    required this.label,
+    required this.isActive,
+    this.onPressed,
+    this.isEnabled = true,
+  });
+
+  final String label;
+  final bool isActive;
+  final VoidCallback? onPressed;
+  final bool isEnabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = isEnabled && onPressed != null;
+    final Color baseColor = isActive ? Colors.tealAccent : const Color(0xFF1A1F2B);
+    final Color textColor = isActive
+        ? Colors.white
+        : enabled
+            ? Colors.white70
+            : Colors.white24;
+
     return OutlinedButton(
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white70,
-        side: const BorderSide(color: Color(0xFF1A1F2B)),
-        backgroundColor: const Color(0xFF0A101A),
+        foregroundColor: textColor,
+        side: BorderSide(color: baseColor.withValues(alpha: isActive ? 1 : 0.6)),
+        backgroundColor: isActive ? const Color(0xFF124559) : const Color(0xFF0A101A),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      onPressed: () {},
+      onPressed: enabled ? onPressed : null,
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text(label),
@@ -502,10 +836,201 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
+class _HostListTile extends StatelessWidget {
+  const _HostListTile({required this.host, required this.isSelected});
+
+  final TwinHost host;
+  final bool isSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = switch (host.status) {
+      TwinHostStatus.online => Colors.tealAccent,
+      TwinHostStatus.stale => Colors.amberAccent,
+      TwinHostStatus.offline => Colors.redAccent,
+    };
+
+    final cpuText = host.metrics.cpuLoad.toStringAsFixed(1);
+    final memoryText = host.metrics.memoryUsedPercent.toStringAsFixed(1);
+    final temp = host.cpuTemperature ?? host.gpuTemperature;
+    final throughput = host.metrics.netThroughputGbps;
+    final tempSegment = temp != null ? ' · ${temp.toStringAsFixed(1)}℃' : '';
+    final metricsLine = 'CPU $cpuText% · RAM $memoryText%$tempSegment';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFF112032) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+        color: isSelected ? Colors.tealAccent.withValues(alpha: 0.5) : const Color(0xFF1A1F2B),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  host.displayName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  host.ip,
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  metricsLine,
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          if (throughput != null)
+            Text(
+              '${throughput.toStringAsFixed(2)} Gbps',
+              style: const TextStyle(
+                color: Colors.tealAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HostDetailCard extends StatelessWidget {
+  const _HostDetailCard({required this.host});
+
+  final TwinHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final memoryUsed = host.memoryUsedBytes;
+    final memoryTotal = host.memoryTotalBytes;
+    final uptimeText = _formatDuration(host.uptime);
+    final throughput = host.metrics.netThroughputGbps;
+    final capacity = host.metrics.netCapacityGbps;
+
+    final memoryLine = memoryUsed != null && memoryTotal != null
+        ? '${_formatBytes(memoryUsed)} / ${_formatBytes(memoryTotal)} (${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%)'
+        : '${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%';
+
+    final hardwareSummary = _joinNonEmpty([
+      host.hardware.systemManufacturer,
+      host.hardware.systemModel,
+    ]);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A101A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF1B2333)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${host.displayName} 상세',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          _DetailRow(label: '상태', value: host.status.name.toUpperCase()),
+          _DetailRow(label: 'IP', value: host.ip),
+          _DetailRow(label: 'OS', value: host.osDisplay),
+          _DetailRow(label: '하드웨어', value: hardwareSummary),
+          _DetailRow(label: 'CPU', value: host.cpuSummary),
+          _DetailRow(
+            label: 'CPU 온도',
+            value: host.cpuTemperature != null ? '${host.cpuTemperature!.toStringAsFixed(1)}℃' : 'N/A',
+          ),
+          _DetailRow(
+            label: 'GPU 온도',
+            value: host.gpuTemperature != null ? '${host.gpuTemperature!.toStringAsFixed(1)}℃' : 'N/A',
+          ),
+          _DetailRow(label: '메모리', value: memoryLine),
+          if (throughput != null)
+            _DetailRow(
+              label: '네트워크',
+              value: capacity != null && capacity > 0
+                  ? '${throughput.toStringAsFixed(2)} / ${capacity.toStringAsFixed(2)} Gbps'
+                  : '${throughput.toStringAsFixed(2)} Gbps',
+            ),
+          _DetailRow(label: '랙/위치', value: host.rack ?? 'N/A'),
+          _DetailRow(label: '에이전트', value: host.agentVersion),
+          _DetailRow(label: '업타임', value: uptimeText),
+          _DetailRow(
+            label: '마지막 수신',
+            value: host.lastSeen.toLocal().toIso8601String(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TwinScenePainter extends CustomPainter {
-  _TwinScenePainter(this.frame);
+  _TwinScenePainter(
+    this.frame, {
+    required this.mode,
+    required this.selectedHost,
+    required this.heatMax,
+  });
 
   final TwinStateFrame frame;
+  final TwinViewportMode mode;
+  final String? selectedHost;
+  final double heatMax;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -537,7 +1062,7 @@ class _TwinScenePainter extends CustomPainter {
 
   void _paintLinks(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
-    final scale = _scaleFactor(size);
+    final scale = twinScaleFactor(frame, size);
     final hosts = {for (final host in frame.hosts) host.hostname: host};
 
     for (final link in frame.links) {
@@ -545,18 +1070,18 @@ class _TwinScenePainter extends CustomPainter {
       final target = hosts[link.target];
       if (source == null || target == null) continue;
 
-      final sourcePoint = _projectPoint(source.position, center, scale);
-      final targetPoint = _projectPoint(target.position, center, scale);
+      final sourcePoint = twinProjectPoint(source.position, center, scale);
+      final targetPoint = twinProjectPoint(target.position, center, scale);
 
-      final utilization = link.utilization.clamp(0, 1);
+      final double utilization = link.utilization.clamp(0.0, 1.0).toDouble();
       final color = Color.lerp(
         Colors.tealAccent,
         Colors.deepOrangeAccent,
-        utilization.toDouble(),
+        utilization,
       )!;
 
       final paint = Paint()
-        ..color = color.withOpacity(0.65)
+        ..color = color.withValues(alpha: 0.65)
         ..strokeWidth = 2 + utilization * 3
         ..style = PaintingStyle.stroke;
       final path = Path()
@@ -574,33 +1099,53 @@ class _TwinScenePainter extends CustomPainter {
 
   void _paintHosts(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
-    final scale = _scaleFactor(size);
+    final scale = twinScaleFactor(frame, size);
 
     for (final host in frame.hosts) {
-      final position = _projectPoint(host.position, center, scale);
+      final position = twinProjectPoint(host.position, center, scale);
       final status = host.status;
       final isCore = host.isCore;
+      final isSelected = selectedHost != null && selectedHost == host.hostname;
 
-      final color = switch (status) {
-        TwinHostStatus.online => Colors.tealAccent,
-        TwinHostStatus.stale => Colors.amberAccent,
-        TwinHostStatus.offline => Colors.redAccent,
-      };
+      Color color;
+      if (mode == TwinViewportMode.heatmap) {
+        final heatValue = host.cpuTemperature ?? host.gpuTemperature ?? host.metrics.cpuLoad;
+        final normalized = heatMax > 0 ? (heatValue / heatMax).clamp(0.0, 1.0) : 0.0;
+        color = Color.lerp(const Color(0xFF38BDF8), Colors.deepOrangeAccent, normalized) ?? Colors.tealAccent;
+        if (status == TwinHostStatus.offline) {
+          color = Colors.grey.shade700;
+        }
+      } else {
+        color = switch (status) {
+          TwinHostStatus.online => Colors.tealAccent,
+          TwinHostStatus.stale => Colors.amberAccent,
+          TwinHostStatus.offline => Colors.redAccent,
+        };
+      }
 
-      final radius = isCore ? 20.0 : 10.0 + host.metrics.cpuLoad.clamp(0, 100) * 0.06;
+      final radius = hostBubbleRadius(host);
 
       final nodePaint = Paint()
-        ..color = color.withOpacity(isCore ? 0.9 : 0.75)
+        ..color = color.withValues(alpha: isCore ? 0.9 : 0.75)
         ..style = PaintingStyle.fill;
 
       canvas.drawCircle(position, radius, nodePaint);
 
-      if (!isCore) {
+      if (isSelected) {
+        canvas.drawCircle(
+          position,
+          radius + 10,
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.4)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.2,
+        );
+      } else if (!isCore) {
         canvas.drawCircle(
           position,
           radius + 6,
           Paint()
-            ..color = color.withOpacity(0.18)
+            ..color = color.withValues(alpha: 0.18)
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.2,
         );
@@ -610,7 +1155,7 @@ class _TwinScenePainter extends CustomPainter {
         text: TextSpan(
           text: host.displayLabel,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.85),
+            color: Colors.white.withValues(alpha: isSelected ? 1 : 0.85),
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
@@ -625,19 +1170,81 @@ class _TwinScenePainter extends CustomPainter {
     }
   }
 
-  double _scaleFactor(Size size) {
-    final radius = frame.maxRadius;
-    if (radius <= 0) return 1;
-    final margin = 64.0;
-    return ((size.shortestSide / 2) - margin) / radius;
-  }
-
-  Offset _projectPoint(TwinPosition position, Offset center, double scale) {
-    final x = center.dx + position.x * scale;
-    final y = center.dy + position.z * scale - position.y * 0.8;
-    return Offset(x, y);
-  }
-
   @override
-  bool shouldRepaint(covariant _TwinScenePainter oldDelegate) => oldDelegate.frame != frame;
+  bool shouldRepaint(covariant _TwinScenePainter oldDelegate) =>
+      oldDelegate.frame != frame ||
+      oldDelegate.mode != mode ||
+      oldDelegate.selectedHost != selectedHost ||
+      oldDelegate.heatMax != heatMax;
+}
+
+double twinScaleFactor(TwinStateFrame frame, Size size) {
+  final radius = frame.maxRadius;
+  if (radius <= 0) return 1;
+  const margin = 64.0;
+  final shortest = size.shortestSide;
+  if (!shortest.isFinite || shortest <= margin * 2) {
+    return 1;
+  }
+  return ((shortest / 2) - margin) / radius;
+}
+
+Offset twinProjectPoint(TwinPosition position, Offset center, double scale) {
+  final x = center.dx + position.x * scale;
+  final y = center.dy + position.z * scale - position.y * 0.8;
+  return Offset(x, y);
+}
+
+double hostBubbleRadius(TwinHost host) {
+  if (host.isCore) {
+    return 22.0;
+  }
+  final cpuLoad = host.metrics.cpuLoad.clamp(0.0, 100.0);
+  return 10.0 + cpuLoad * 0.06;
+}
+
+String _formatBytes(double? bytes) {
+  if (bytes == null || bytes.isNaN) {
+    return 'N/A';
+  }
+  const kilo = 1024;
+  const mega = kilo * 1024;
+  const giga = mega * 1024;
+  if (bytes >= giga) {
+    return '${(bytes / giga).toStringAsFixed(1)} GB';
+  }
+  if (bytes >= mega) {
+    return '${(bytes / mega).toStringAsFixed(1)} MB';
+  }
+  if (bytes >= kilo) {
+    return '${(bytes / kilo).toStringAsFixed(1)} KB';
+  }
+  return '${bytes.toStringAsFixed(0)} B';
+}
+
+String _formatDuration(Duration duration) {
+  final days = duration.inDays;
+  final hours = duration.inHours % 24;
+  final minutes = duration.inMinutes % 60;
+  final seconds = duration.inSeconds % 60;
+  final parts = <String>[];
+  if (days > 0) parts.add('${days}d');
+  if (hours > 0) parts.add('${hours}h');
+  if (minutes > 0) parts.add('${minutes}m');
+  if (parts.isEmpty) {
+    parts.add('${seconds}s');
+  }
+  return parts.join(' ');
+}
+
+String _joinNonEmpty(List<String?> values, {String separator = ' · '}) {
+  final filtered = values
+      .whereType<String>()
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty)
+      .toList();
+  if (filtered.isEmpty) {
+    return 'N/A';
+  }
+  return filtered.join(separator);
 }

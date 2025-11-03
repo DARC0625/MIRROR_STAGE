@@ -4,7 +4,15 @@ import type { Cache } from 'cache-manager';
 import { CACHE_TOKEN } from '../cache/cache.module';
 import { BehaviorSubject } from 'rxjs';
 import type { MetricSample } from '../metrics/metrics.dto';
-import type { HostTwinState, TwinLink, TwinState, TwinPosition, HostMetricsSummary, TwinHostStatus } from './digital-twin.types';
+import type {
+  HostTwinState,
+  TwinLink,
+  TwinState,
+  TwinPosition,
+  HostMetricsSummary,
+  TwinHostStatus,
+  HostHardwareSummary,
+} from './digital-twin.types';
 
 interface HostState {
   hostname: string;
@@ -14,6 +22,7 @@ interface HostState {
   platform: string;
   rack?: string;
   metrics: HostMetricsSummary;
+  hardware?: HostHardwareSummary;
   lastSeen: number;
   positionOverride?: TwinPosition;
   previousNetBytesTx?: number | null;
@@ -48,12 +57,16 @@ export class DigitalTwinService {
 
     const now = Date.now();
     const sampleTimestamp = this.parseTimestamp(sample.timestamp, now);
+    const tags = sample.tags ?? {};
     const metrics: HostMetricsSummary = {
       cpuLoad: Number(sample.cpu_load ?? 0),
       memoryUsedPercent: Number(sample.memory_used_percent ?? 0),
       loadAverage: Number(sample.load_average ?? 0),
       uptimeSeconds: Number(sample.uptime_seconds ?? 0),
-      gpuTemperature: sample.gpu_temperature ?? null,
+      gpuTemperature: this.coerceNullableNumber(sample.gpu_temperature),
+      cpuTemperature: this.coerceNullableNumber(sample.cpu_temperature),
+      memoryTotalBytes: this.coerceNullableNumber(sample.memory_total_bytes ?? tags['memory_total_bytes']),
+      memoryAvailableBytes: this.coerceNullableNumber(sample.memory_available_bytes),
       netBytesTx: sample.net_bytes_tx ?? null,
       netBytesRx: sample.net_bytes_rx ?? null,
       netThroughputGbps: null,
@@ -61,6 +74,8 @@ export class DigitalTwinService {
     };
 
     const ipAddress = this.ensureIp(hostname, sample.ip ?? sample.ipv4);
+
+    const hardware = this.buildHardwareSummary(sample, tags);
 
     const current: HostState = this.state.get(hostname) ?? {
       hostname,
@@ -70,6 +85,7 @@ export class DigitalTwinService {
       platform: sample.platform,
       rack: sample.rack,
       metrics,
+      hardware,
       lastSeen: now,
       previousNetBytesTx: sample.net_bytes_tx ?? null,
       previousNetBytesRx: sample.net_bytes_rx ?? null,
@@ -93,6 +109,7 @@ export class DigitalTwinService {
     current.previousNetBytesTx = sample.net_bytes_tx ?? current.previousNetBytesTx ?? null;
     current.previousNetBytesRx = sample.net_bytes_rx ?? current.previousNetBytesRx ?? null;
     current.previousSampleTimestamp = sampleTimestamp;
+    this.mergeHardwareSnapshot(current, hardware);
     current.positionOverride = sample.position
       ? {
           x: sample.position.x,
@@ -153,9 +170,10 @@ export class DigitalTwinService {
         agentVersion: host.agentVersion,
         platform: host.platform,
         rack: host.rack,
-        metrics: host.metrics,
-        position,
-      };
+      metrics: host.metrics,
+      position,
+      hardware: host.hardware,
+    };
 
       renderedHosts.push(twinHost);
 
@@ -296,6 +314,71 @@ export class DigitalTwinService {
     return null;
   }
 
+  private buildHardwareSummary(sample: MetricSample, tags: Record<string, string>): HostHardwareSummary {
+    return {
+      systemManufacturer: this.pickString(sample.system_manufacturer, tags['system_manufacturer']),
+      systemModel: this.pickString(sample.system_model, tags['system_model']),
+      biosVersion: this.pickString(sample.bios_version, tags['bios_version']),
+      cpuModel: this.pickString(sample.cpu_model, tags['cpu_model']),
+      cpuPhysicalCores: this.coerceNullableInteger(sample.cpu_physical_cores ?? tags['cpu_physical_cores']),
+      cpuLogicalCores: this.coerceNullableInteger(sample.cpu_logical_cores ?? tags['cpu_logical_cores']),
+      memoryTotalBytes: this.coerceNullableNumber(sample.memory_total_bytes ?? tags['memory_total_bytes']),
+      osDistro: this.pickString(sample.os_distro, tags['os_distro']),
+      osRelease: this.pickString(sample.os_release, tags['os_release']),
+      osKernel: this.pickString(sample.os_kernel, tags['os_kernel']),
+    };
+  }
+
+  private mergeHardwareSnapshot(target: HostState, snapshot: HostHardwareSummary): void {
+    if (!snapshot) {
+      return;
+    }
+    if (!target.hardware) {
+      target.hardware = {};
+    }
+    const destination = target.hardware as Record<string, unknown>;
+    for (const [key, value] of Object.entries(snapshot)) {
+      if (value === undefined || value === null) {
+        continue;
+      }
+      if (typeof value === 'string' && value.trim().length === 0) {
+        continue;
+      }
+      destination[key] = value;
+    }
+  }
+
+  private pickString(...candidates: Array<unknown>): string | null {
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string') {
+        const trimmed = candidate.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+    }
+    return null;
+  }
+
+  private coerceNullableNumber(value: unknown): number | null {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+    return null;
+  }
+
+  private coerceNullableInteger(value: unknown): number | null {
+    const parsed = this.coerceNullableNumber(value);
+    if (parsed === null) {
+      return null;
+    }
+    return Math.trunc(parsed);
+  }
+
   private computeThroughputGbps(state: HostState, sample: MetricSample, sampleTimestamp: number): number | null {
     const prevTimestamp = state.previousSampleTimestamp;
     const txNow = sample.net_bytes_tx ?? null;
@@ -412,6 +495,7 @@ export class DigitalTwinService {
       rack: egoState?.rack,
       metrics,
       position: { x: 0, y: 0, z: 0 },
+      hardware: egoState?.hardware,
     };
   }
 
@@ -433,6 +517,9 @@ export class DigitalTwinService {
       loadAverage: 0,
       uptimeSeconds: 0,
       gpuTemperature: null,
+      cpuTemperature: null,
+      memoryTotalBytes: null,
+      memoryAvailableBytes: null,
       netBytesTx: null,
       netBytesRx: null,
       netThroughputGbps: null,

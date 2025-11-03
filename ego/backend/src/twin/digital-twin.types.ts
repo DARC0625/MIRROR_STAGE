@@ -6,10 +6,26 @@ export interface HostMetricsSummary {
   loadAverage: number;
   uptimeSeconds: number;
   gpuTemperature?: number | null;
+  cpuTemperature?: number | null;
+  memoryTotalBytes?: number | null;
+  memoryAvailableBytes?: number | null;
   netBytesTx?: number | null;
   netBytesRx?: number | null;
   netThroughputGbps?: number | null;
   netCapacityGbps?: number | null;
+}
+
+export interface HostHardwareSummary {
+  systemManufacturer?: string | null;
+  systemModel?: string | null;
+  biosVersion?: string | null;
+  cpuModel?: string | null;
+  cpuPhysicalCores?: number | null;
+  cpuLogicalCores?: number | null;
+  memoryTotalBytes?: number | null;
+  osDistro?: string | null;
+  osRelease?: string | null;
+  osKernel?: string | null;
 }
 
 export interface TwinPosition {
@@ -30,6 +46,7 @@ export interface HostTwinState {
   rack?: string;
   metrics: HostMetricsSummary;
   position: TwinPosition;
+  hardware?: HostHardwareSummary;
 }
 
 export interface TwinLink {

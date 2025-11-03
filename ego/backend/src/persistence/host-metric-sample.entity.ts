@@ -31,6 +31,15 @@ export class HostMetricSampleEntity {
   gpuTemperature!: number | null;
 
   @Column({ type: 'float', nullable: true })
+  cpuTemperature!: number | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  memoryTotalBytes!: number | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  memoryAvailableBytes!: number | null;
+
+  @Column({ type: 'float', nullable: true })
   netThroughputGbps!: number | null;
 
   @Column({ type: 'float', nullable: true })

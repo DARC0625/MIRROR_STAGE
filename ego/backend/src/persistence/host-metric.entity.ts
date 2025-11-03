@@ -35,6 +35,15 @@ export class HostMetricEntity {
   @Column({ type: 'float', nullable: true })
   gpuTemperature!: number | null;
 
+  @Column({ type: 'float', nullable: true })
+  cpuTemperature!: number | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  memoryTotalBytes!: number | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  memoryAvailableBytes!: number | null;
+
   @Column({ type: 'integer', nullable: true })
   netBytesTx!: number | null;
 
@@ -49,6 +58,33 @@ export class HostMetricEntity {
 
   @Column({ type: 'simple-json', nullable: true })
   tags!: Record<string, string> | null;
+
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  systemManufacturer!: string | null;
+
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  systemModel!: string | null;
+
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  biosVersion!: string | null;
+
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  cpuModel!: string | null;
+
+  @Column({ type: 'integer', nullable: true })
+  cpuPhysicalCores!: number | null;
+
+  @Column({ type: 'integer', nullable: true })
+  cpuLogicalCores!: number | null;
+
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  osDistro!: string | null;
+
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  osRelease!: string | null;
+
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  osKernel!: string | null;
 
   @Column({ type: 'float', nullable: true })
   positionX!: number | null;

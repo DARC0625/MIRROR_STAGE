@@ -39,9 +39,19 @@ export class MetricsService {
       const netBytesTx = sample.net_bytes_tx != null ? Number(sample.net_bytes_tx) : null;
       const netBytesRx = sample.net_bytes_rx != null ? Number(sample.net_bytes_rx) : null;
       const gpuTemperature = sample.gpu_temperature != null ? Number(sample.gpu_temperature) : null;
+      const cpuTemperatureCandidate = sample.cpu_temperature;
       const netCapacityGbps = this.extractCapacityGbps(sample);
       const netThroughputGbps = hostView?.metrics.netThroughputGbps ?? null;
       const resolvedCapacity = hostView?.metrics.netCapacityGbps ?? netCapacityGbps;
+      const cpuTemperature =
+        this.toNullableNumber(cpuTemperatureCandidate) ?? hostView?.metrics.cpuTemperature ?? null;
+      const memoryTotalBytesCandidate = sample.memory_total_bytes ?? tags?.memory_total_bytes ?? null;
+      const memoryTotalBytes =
+        this.toNullableNumber(memoryTotalBytesCandidate) ?? hostView?.metrics.memoryTotalBytes ?? null;
+      const memoryAvailableBytesCandidate = sample.memory_available_bytes ?? null;
+      const memoryAvailableBytes =
+        this.toNullableNumber(memoryAvailableBytesCandidate) ?? hostView?.metrics.memoryAvailableBytes ?? null;
+      const hardware = hostView?.hardware;
 
       await this.alertsService.evaluateSample(hostname, {
         cpuLoad: Number(sample.cpu_load ?? 0),
@@ -63,6 +73,9 @@ export class MetricsService {
         loadAverage: Number(sample.load_average ?? 0),
         uptimeSeconds: Number(sample.uptime_seconds ?? 0),
         gpuTemperature,
+        cpuTemperature,
+        memoryTotalBytes,
+        memoryAvailableBytes,
         netBytesTx,
         netBytesRx,
         netCapacityGbps: resolvedCapacity ?? null,
@@ -72,6 +85,15 @@ export class MetricsService {
         positionY: position?.y ?? null,
         positionZ: position?.z ?? null,
         lastSeen,
+        systemManufacturer: hardware?.systemManufacturer ?? null,
+        systemModel: hardware?.systemModel ?? null,
+        biosVersion: hardware?.biosVersion ?? null,
+        cpuModel: hardware?.cpuModel ?? null,
+        cpuPhysicalCores: hardware?.cpuPhysicalCores ?? null,
+        cpuLogicalCores: hardware?.cpuLogicalCores ?? null,
+        osDistro: hardware?.osDistro ?? null,
+        osRelease: hardware?.osRelease ?? null,
+        osKernel: hardware?.osKernel ?? null,
       });
 
       entities.push(entity);
@@ -85,6 +107,9 @@ export class MetricsService {
           loadAverage: Number(sample.load_average ?? 0),
           uptimeSeconds: Number(sample.uptime_seconds ?? 0),
           gpuTemperature,
+          cpuTemperature,
+          memoryTotalBytes,
+          memoryAvailableBytes,
           netThroughputGbps,
           netCapacityGbps: resolvedCapacity ?? null,
           netBytesTx,
@@ -133,6 +158,17 @@ export class MetricsService {
       if (best > 0) {
         return best / 1_000;
       }
+    }
+    return null;
+  }
+
+  private toNullableNumber(value: unknown): number | null {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
     }
     return null;
   }

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-DEFAULT_INTERVAL_SECONDS = 5.0
+DEFAULT_INTERVAL_SECONDS = 1.0
 DEFAULT_COMMAND_POLL_SECONDS = 15.0
 
 

@@ -6,7 +6,7 @@ import platform
 import socket
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 import psutil
 
@@ -57,16 +57,20 @@ def collect_snapshot() -> TelemetrySnapshot:
 def _collect_extras() -> Dict[str, Any]:
     extras: Dict[str, Any] = {}
 
-    try:
-        per_cpu = psutil.cpu_percent(percpu=True)
-        extras["cpu_per_core"] = per_cpu
-    except Exception:
-        extras["cpu_per_core"] = []
+  try:
+    per_cpu = psutil.cpu_percent(percpu=True)
+    extras["cpu_per_core"] = per_cpu
+  except Exception:
+    extras["cpu_per_core"] = []
 
-    try:
-        memory = psutil.virtual_memory()
-        extras["memory_total_bytes"] = memory.total
-        extras["memory_available_bytes"] = memory.available
+  extras["cpu_physical_cores"] = psutil.cpu_count(logical=False) or psutil.cpu_count() or 0
+  extras["cpu_logical_cores"] = psutil.cpu_count() or 0
+  extras["cpu_model"] = platform.processor() or platform.machine()
+
+  try:
+    memory = psutil.virtual_memory()
+    extras["memory_total_bytes"] = memory.total
+    extras["memory_available_bytes"] = memory.available
     except Exception:
         extras.setdefault("memory_total_bytes", 0)
         extras.setdefault("memory_available_bytes", 0)
@@ -77,20 +81,35 @@ def _collect_extras() -> Dict[str, Any]:
     except Exception:
         extras["swap_used_percent"] = None
 
-    disks = _collect_disk_usage()
-    interfaces = _collect_interface_stats()
-    extras["disks"] = disks
-    extras["interfaces"] = interfaces
-    extras["temperatures"] = _collect_temperatures()
-    extras["top_processes"] = _collect_top_processes()
+  disks = _collect_disk_usage()
+  interfaces = _collect_interface_stats()
+  extras["disks"] = disks
+  extras["interfaces"] = interfaces
+  extras["temperatures"] = _collect_temperatures()
+  temps = extras["temperatures"]
+  cpu_temp = _extract_temperature(temps, ("cpu", "package", "core"))
+  if cpu_temp is not None:
+    extras["cpu_temperature"] = cpu_temp
+  gpu_temp = _extract_temperature(temps, ("gpu", "graphics", "video"))
+  if gpu_temp is not None:
+    extras["gpu_temperature"] = gpu_temp
+  extras["top_processes"] = _collect_top_processes()
 
-    tags: Dict[str, str] = {}
-    primary_interface = next((iface for iface in interfaces if iface.get("is_up")), None) or (interfaces[0] if interfaces else None)
-    if primary_interface:
-        tags["primary_interface"] = primary_interface["name"]
-        speed_mbps = primary_interface.get("speed_mbps")
-        if speed_mbps:
-            tags["primary_interface_speed_mbps"] = str(speed_mbps)
+  uname = platform.uname()
+  extras["os_distro"] = uname.system
+  extras["os_release"] = uname.release
+  extras["os_kernel"] = uname.version
+  extras["system_model"] = uname.machine
+  extras["system_manufacturer"] = getattr(uname, "node", None) or uname.system
+
+  tags: Dict[str, str] = {}
+  primary_interface = next((iface for iface in interfaces if iface.get("is_up")), None) or (interfaces[0] if interfaces else None)
+  if primary_interface:
+    tags["primary_interface"] = primary_interface["name"]
+    speed_mbps = primary_interface.get("speed_mbps")
+    if speed_mbps:
+      tags["primary_interface_speed_mbps"] = str(speed_mbps)
+      extras["primary_interface_speed_mbps"] = speed_mbps
     if disks:
         tags["primary_disk"] = disks[0]["device"]
     if tags:
@@ -150,10 +169,10 @@ def _collect_interface_stats() -> List[Dict[str, Any]]:
 
 
 def _collect_temperatures() -> Dict[str, float]:
-    temps: Dict[str, float] = {}
-    if not hasattr(psutil, "sensors_temperatures"):
-        return temps
-    try:
+  temps: Dict[str, float] = {}
+  if not hasattr(psutil, "sensors_temperatures"):
+    return temps
+  try:
         sensors = psutil.sensors_temperatures()
         for label, entries in sensors.items():
             if not entries:
@@ -166,7 +185,16 @@ def _collect_temperatures() -> Dict[str, float]:
             temps[key] = float(hottest.current)
     except Exception:
         return {}
-    return temps
+  return temps
+
+
+def _extract_temperature(temps: Dict[str, float], keywords: Tuple[str, ...]) -> Optional[float]:
+  if not temps:
+    return None
+  matches = [value for key, value in temps.items() if any(keyword in key.lower() for keyword in keywords)]
+  if matches:
+    return float(max(matches))
+  return None
 
 
 def _collect_top_processes(limit: int = 5) -> List[Dict[str, Any]]:

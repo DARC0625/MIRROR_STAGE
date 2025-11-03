@@ -1,8 +1,38 @@
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
+
+const double _bytesPerGiB = 1024 * 1024 * 1024;
+
+String? _stringOrNull(dynamic value) {
+  if (value is String) {
+    final trimmed = value.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+double? _doubleOrNull(dynamic value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is num && value.isFinite) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    final parsed = double.tryParse(value);
+    return parsed?.isFinite == true ? parsed : null;
+  }
+  return null;
+}
+
+int? _intOrNull(dynamic value) {
+  final parsed = _doubleOrNull(value);
+  return parsed?.round();
+}
 
 enum TwinHostStatus { online, stale, offline }
 
@@ -34,6 +64,9 @@ class HostMetricsSummary {
     required this.loadAverage,
     required this.uptimeSeconds,
     this.gpuTemperature,
+    this.cpuTemperature,
+    this.memoryTotalBytes,
+    this.memoryAvailableBytes,
     this.netBytesTx,
     this.netBytesRx,
     this.netThroughputGbps,
@@ -45,10 +78,20 @@ class HostMetricsSummary {
   final double loadAverage;
   final double uptimeSeconds;
   final double? gpuTemperature;
+  final double? cpuTemperature;
+  final double? memoryTotalBytes;
+  final double? memoryAvailableBytes;
   final double? netBytesTx;
   final double? netBytesRx;
   final double? netThroughputGbps;
   final double? netCapacityGbps;
+
+  double? get memoryUsedBytes {
+    if (memoryTotalBytes == null) {
+      return null;
+    }
+    return memoryTotalBytes! * (memoryUsedPercent.clamp(0, 100) / 100);
+  }
 
   factory HostMetricsSummary.fromJson(Map<String, dynamic> json) {
     return HostMetricsSummary(
@@ -57,10 +100,74 @@ class HostMetricsSummary {
       loadAverage: (json['loadAverage'] as num?)?.toDouble() ?? 0,
       uptimeSeconds: (json['uptimeSeconds'] as num?)?.toDouble() ?? 0,
       gpuTemperature: (json['gpuTemperature'] as num?)?.toDouble(),
+      cpuTemperature: (json['cpuTemperature'] as num?)?.toDouble(),
+      memoryTotalBytes: (json['memoryTotalBytes'] as num?)?.toDouble() ?? (json['memory_total_bytes'] as num?)?.toDouble(),
+      memoryAvailableBytes:
+          (json['memoryAvailableBytes'] as num?)?.toDouble() ?? (json['memory_available_bytes'] as num?)?.toDouble(),
       netBytesTx: (json['netBytesTx'] as num?)?.toDouble(),
       netBytesRx: (json['netBytesRx'] as num?)?.toDouble(),
       netThroughputGbps: (json['netThroughputGbps'] as num?)?.toDouble(),
       netCapacityGbps: (json['netCapacityGbps'] as num?)?.toDouble(),
+    );
+  }
+}
+
+class HostHardwareSummary {
+  const HostHardwareSummary({
+    this.systemManufacturer,
+    this.systemModel,
+    this.biosVersion,
+    this.cpuModel,
+    this.cpuPhysicalCores,
+    this.cpuLogicalCores,
+    this.memoryTotalBytes,
+    this.osDistro,
+    this.osRelease,
+    this.osKernel,
+  });
+
+  final String? systemManufacturer;
+  final String? systemModel;
+  final String? biosVersion;
+  final String? cpuModel;
+  final int? cpuPhysicalCores;
+  final int? cpuLogicalCores;
+  final double? memoryTotalBytes;
+  final String? osDistro;
+  final String? osRelease;
+  final String? osKernel;
+
+  factory HostHardwareSummary.fromJson(Map<String, dynamic>? json) {
+    if (json == null) {
+      return const HostHardwareSummary();
+    }
+    return HostHardwareSummary(
+      systemManufacturer: _stringOrNull(json['systemManufacturer']) ?? _stringOrNull(json['system_manufacturer']),
+      systemModel: _stringOrNull(json['systemModel']) ?? _stringOrNull(json['system_model']),
+      biosVersion: _stringOrNull(json['biosVersion']) ?? _stringOrNull(json['bios_version']),
+      cpuModel: _stringOrNull(json['cpuModel']) ?? _stringOrNull(json['cpu_model']),
+      cpuPhysicalCores: _intOrNull(json['cpuPhysicalCores'] ?? json['cpu_physical_cores']),
+      cpuLogicalCores: _intOrNull(json['cpuLogicalCores'] ?? json['cpu_logical_cores']),
+      memoryTotalBytes: _doubleOrNull(json['memoryTotalBytes'] ?? json['memory_total_bytes']),
+      osDistro: _stringOrNull(json['osDistro'] ?? json['os_distro']),
+      osRelease: _stringOrNull(json['osRelease'] ?? json['os_release']),
+      osKernel: _stringOrNull(json['osKernel'] ?? json['os_kernel']),
+    );
+  }
+
+  HostHardwareSummary merge(HostHardwareSummary fallback) {
+    if (identical(this, fallback)) return this;
+    return HostHardwareSummary(
+      systemManufacturer: systemManufacturer ?? fallback.systemManufacturer,
+      systemModel: systemModel ?? fallback.systemModel,
+      biosVersion: biosVersion ?? fallback.biosVersion,
+      cpuModel: cpuModel ?? fallback.cpuModel,
+      cpuPhysicalCores: cpuPhysicalCores ?? fallback.cpuPhysicalCores,
+      cpuLogicalCores: cpuLogicalCores ?? fallback.cpuLogicalCores,
+      memoryTotalBytes: memoryTotalBytes ?? fallback.memoryTotalBytes,
+      osDistro: osDistro ?? fallback.osDistro,
+      osRelease: osRelease ?? fallback.osRelease,
+      osKernel: osKernel ?? fallback.osKernel,
     );
   }
 }
@@ -76,6 +183,7 @@ class TwinHost {
     required this.platform,
     required this.metrics,
     required this.position,
+    required this.hardware,
     this.label,
     this.rack,
   });
@@ -90,17 +198,77 @@ class TwinHost {
   final String platform;
   final HostMetricsSummary metrics;
   final TwinPosition position;
+  final HostHardwareSummary hardware;
   final String? rack;
 
   bool get isEgo => hostname == _egoHostId;
   bool get isCore => isEgo;
 
   double get uptimeHours => metrics.uptimeSeconds / 3600.0;
+  Duration get uptime => Duration(seconds: metrics.uptimeSeconds.ceil());
 
-  String get displayLabel => label ?? '${displayName}\n$ip';
+  String get displayLabel => label ?? '$displayName\n$ip';
+
+  double? get cpuTemperature => metrics.cpuTemperature;
+  double? get gpuTemperature => metrics.gpuTemperature;
+
+  double? get memoryTotalBytes => metrics.memoryTotalBytes ?? hardware.memoryTotalBytes;
+
+  double? get memoryAvailableBytes {
+    if (metrics.memoryAvailableBytes != null) {
+      return metrics.memoryAvailableBytes;
+    }
+    final total = memoryTotalBytes;
+    final used = memoryUsedBytes;
+    if (total != null && used != null) {
+      return (total - used).clamp(0, total);
+    }
+    return null;
+  }
+
+  double? get memoryUsedBytes {
+    if (metrics.memoryUsedBytes != null) {
+      return metrics.memoryUsedBytes;
+    }
+    final total = memoryTotalBytes;
+    if (total == null) return null;
+    return total * (metrics.memoryUsedPercent.clamp(0, 100) / 100);
+  }
+
+  String get osDisplay {
+    final distro = hardware.osDistro ?? platform;
+    final release = hardware.osRelease;
+    if (release != null && release.isNotEmpty) {
+      return '${distro.trim()} $release'.trim();
+    }
+    return distro.trim();
+  }
+
+  String get cpuSummary {
+    final model = hardware.cpuModel;
+    final physical = hardware.cpuPhysicalCores;
+    final logical = hardware.cpuLogicalCores;
+    if (model == null && physical == null && logical == null) {
+      return 'N/A';
+    }
+    final parts = <String>[];
+    if (model != null) {
+      parts.add(model);
+    }
+    if (physical != null) {
+      parts.add('P$physical');
+    }
+    if (logical != null) {
+      parts.add('L$logical');
+    }
+    return parts.join(' · ');
+  }
 
   factory TwinHost.fromJson(Map<String, dynamic> json) {
     final statusString = (json['status'] as String? ?? 'offline').toLowerCase();
+    final rawHardware = HostHardwareSummary.fromJson(json['hardware'] as Map<String, dynamic>?);
+    final derivedHardware = HostHardwareSummary.fromJson(json);
+    final hardware = rawHardware.merge(derivedHardware);
     return TwinHost(
       hostname: json['hostname'] as String? ?? 'unknown',
       displayName: json['displayName'] as String? ?? 'Unknown Host',
@@ -119,6 +287,7 @@ class TwinHost {
       position: TwinPosition.fromJson(
         (json['position'] as Map<String, dynamic>? ?? const {}),
       ),
+      hardware: hardware,
       rack: json['rack'] as String?,
     );
   }
@@ -255,6 +424,64 @@ class TwinStateFrame {
         .where((host) => !host.isCore)
         .map((host) => host.metrics.netThroughputGbps ?? 0)
         .fold<double>(0, math.max);
+  }
+
+  double get maxCpuTemperature {
+    double maxValue = 0;
+    for (final host in hosts) {
+      if (host.isCore) continue;
+      final temp = host.cpuTemperature ?? host.gpuTemperature;
+      if (temp != null && temp > maxValue) {
+        maxValue = temp;
+      }
+    }
+    return maxValue;
+  }
+
+  double get averageCpuTemperature {
+    double sum = 0;
+    int count = 0;
+    for (final host in hosts) {
+      if (host.isCore) continue;
+      final temp = host.cpuTemperature ?? host.gpuTemperature;
+      if (temp != null) {
+        sum += temp;
+        count += 1;
+      }
+    }
+    if (count == 0) return 0;
+    return sum / count;
+  }
+
+  double get totalMemoryCapacityGb {
+    double total = 0;
+    for (final host in hosts) {
+      if (host.isCore) continue;
+      final capacity = host.memoryTotalBytes;
+      if (capacity != null) {
+        total += capacity / _bytesPerGiB;
+      }
+    }
+    return total;
+  }
+
+  double get totalMemoryUsedGb {
+    double total = 0;
+    for (final host in hosts) {
+      if (host.isCore) continue;
+      final used = host.memoryUsedBytes;
+      if (used != null) {
+        total += used / _bytesPerGiB;
+      }
+    }
+    return total;
+  }
+
+  double get memoryUtilizationPercent {
+    final capacityGb = totalMemoryCapacityGb;
+    if (capacityGb <= 0) return 0;
+    final usedGb = totalMemoryUsedGb;
+    return (usedGb / capacityGb) * 100;
   }
 
   double get maxRadius {
