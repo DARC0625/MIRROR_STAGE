@@ -10,10 +10,12 @@ import { MetricsModule } from './metrics/metrics.module';
 import { DigitalTwinModule } from './twin/digital-twin.module';
 import { HostMetricEntity } from './persistence/host-metric.entity';
 import { HostMetricSampleEntity } from './persistence/host-metric-sample.entity';
-import { AlertEntity } from './alerts/alert.entity';
-import { AlertsModule } from './alerts/alerts.module';
 import { CacheModule } from './cache/cache.module';
 import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
+import { AlertEntity } from './alerts/alert.entity';
+import { AlertsModule } from './alerts/alerts.module';
+import { CommandEntity } from './commands/command.entity';
+import { CommandsModule } from './commands/commands.module';
 
 @Module({
   imports: [
@@ -47,7 +49,7 @@ import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
           return {
             type: 'postgres',
             url: postgresUrl,
-            entities: [HostMetricEntity, HostMetricSampleEntity, AlertEntity],
+            entities: [HostMetricEntity, HostMetricSampleEntity, AlertEntity, CommandEntity],
             synchronize: true,
             ssl: config.get('MIRROR_STAGE_DB_SSL') === 'true',
           };
@@ -61,7 +63,7 @@ import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
         return {
           type: 'sqlite',
           database: sqlitePath,
-          entities: [HostMetricEntity, HostMetricSampleEntity, AlertEntity],
+          entities: [HostMetricEntity, HostMetricSampleEntity, AlertEntity, CommandEntity],
           synchronize: true,
         };
       },
@@ -71,6 +73,7 @@ import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
     MetricsModule,
     EgoMonitorModule,
     AlertsModule,
+    CommandsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

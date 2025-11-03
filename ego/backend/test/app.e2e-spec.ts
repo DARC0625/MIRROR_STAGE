@@ -105,5 +105,30 @@ describe('Digital Twin API (e2e)', () => {
     expect(Array.isArray(alertsResponse.body)).toBe(true);
     expect(alertsResponse.body.length).toBeGreaterThanOrEqual(1);
     expect(alertsResponse.body[0].hostname).toBe('titan-01');
+
+    const createCommandResponse = await request(app.getHttpServer())
+      .post('/api/commands')
+      .send({ hostname: 'titan-01', command: 'echo hello', timeoutSeconds: 5 })
+      .expect(201);
+
+    expect(createCommandResponse.body.hostname).toBe('titan-01');
+    const commandId = createCommandResponse.body.id;
+
+    const pendingResponse = await request(app.getHttpServer())
+      .get('/api/commands/pending/titan-01')
+      .expect(200);
+    expect(Array.isArray(pendingResponse.body)).toBe(true);
+    expect(pendingResponse.body[0].id).toBe(commandId);
+    expect(pendingResponse.body[0].command).toBe('echo hello');
+
+    await request(app.getHttpServer())
+      .post(`/api/commands/${commandId}/result`)
+      .send({ status: 'succeeded', exitCode: 0, stdout: 'hello\n', stderr: '' })
+      .expect(201);
+
+    const emptyPending = await request(app.getHttpServer())
+      .get('/api/commands/pending/titan-01')
+      .expect(200);
+    expect(emptyPending.body).toEqual([]);
   });
 });

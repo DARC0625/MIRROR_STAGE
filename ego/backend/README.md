@@ -46,13 +46,19 @@ npm run test:cov     # 커버리지
 
 ## REST API
 - `GET /api/health` : 상태 체크(200 ➝ `ok`).
-- `POST /api/metrics/batch` : 에이전트가 배치 전송한 메트릭 수집. `accepted` 카운터와 수신 시간을 반환하며 Zod 스키마로 유효성 검사합니다.
+- `POST /api/metrics/batch` : 에이전트가 배치 전송한 메트릭을 수집.
 - `GET /api/twin/state` : 현재 디지털 트윈 스냅샷(JSON)
 - `GET /api/alerts/active` : 임계치를 초과한 활성 알람 목록
+- `POST /api/commands` : 호스트 대상으로 명령을 큐에 등록
+- `GET /api/commands/pending/:hostname` : REFLECTOR가 실행 대기 명령을 가져감 (가져가면 `running` 상태로 변경)
+- `POST /api/commands/:id/result` : REFLECTOR가 명령 실행 결과(stdout/stderr/exitCode)를 보고
+- `GET /api/commands` : 최근 명령 이력 조회
 
 ## 실시간 채널
 - Socket.IO 네임스페이스: `ws://<host>:3000/digital-twin`
-- 이벤트: `twin-state`
+  - 이벤트: `twin-state`
+- Socket.IO 네임스페이스: `ws://<host>:3000/commands`
+  - 이벤트: `command-update`
   ```json
   {
     "type": "twin-state",
@@ -83,6 +89,8 @@ npm run test:cov     # 커버리지
 - **MetricsModule**: Zod 검증을 통과한 샘플을 디지털 트윈 엔진과 TypeORM 리포지토리 양쪽에 반영
 - **EgoMonitorModule**: EGO 서버 자체 메트릭을 수집해 Metrics 파이프라인으로 주입
 - **DigitalTwinModule**: 호스트 상태를 추적하고 BehaviorSubject로 스냅샷을 전파, Socket.IO 게이트웨이와 REST 컨트롤러 제공
+- **AlertsModule**: CPU/메모리/온도/링크 혼잡 임계치를 감시하여 알람을 관리
+- **CommandsModule**: REST + Socket.IO로 명령 큐를 관리하고 REFLECTOR와 결과를 주고받음
 - **HealthController**: 간단한 헬스 체크
 
 구체적인 설계/데이터 모델은 최상위 `docs/` 디렉터리(특히 `architecture.md`)와 동기화합니다.
