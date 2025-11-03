@@ -14,6 +14,10 @@ interface HostState {
   metrics: HostMetricsSummary;
   lastSeen: number;
   positionOverride?: TwinPosition;
+  previousNetBytesTx?: number | null;
+  previousNetBytesRx?: number | null;
+  previousSampleTimestamp?: number | null;
+  netCapacityGbps?: number | null;
 }
 
 const EGO_HOSTNAME = process.env.EGO_HOSTNAME ?? 'ego-hub';
@@ -39,6 +43,7 @@ export class DigitalTwinService {
     }
 
     const now = Date.now();
+    const sampleTimestamp = this.parseTimestamp(sample.timestamp, now);
     const metrics: HostMetricsSummary = {
       cpuLoad: Number(sample.cpu_load ?? 0),
       memoryUsedPercent: Number(sample.memory_used_percent ?? 0),
@@ -47,6 +52,8 @@ export class DigitalTwinService {
       gpuTemperature: sample.gpu_temperature ?? null,
       netBytesTx: sample.net_bytes_tx ?? null,
       netBytesRx: sample.net_bytes_rx ?? null,
+      netThroughputGbps: null,
+      netCapacityGbps: null,
     };
 
     const ipAddress = this.ensureIp(hostname, sample.ip ?? sample.ipv4);
@@ -60,7 +67,17 @@ export class DigitalTwinService {
       rack: sample.rack,
       metrics,
       lastSeen: now,
+      previousNetBytesTx: sample.net_bytes_tx ?? null,
+      previousNetBytesRx: sample.net_bytes_rx ?? null,
+      previousSampleTimestamp: sampleTimestamp,
+      netCapacityGbps: null,
     };
+
+    const capacityGbps = this.extractCapacityGbps(sample, current.netCapacityGbps);
+    const throughputGbps = this.computeThroughputGbps(current, sample, sampleTimestamp);
+
+    metrics.netThroughputGbps = throughputGbps ?? current.metrics.netThroughputGbps ?? null;
+    metrics.netCapacityGbps = capacityGbps ?? metrics.netCapacityGbps ?? null;
 
     current.ip = ipAddress;
     current.metrics = metrics;
@@ -68,6 +85,10 @@ export class DigitalTwinService {
     current.platform = sample.platform;
     current.rack = sample.rack ?? current.rack;
     current.lastSeen = now;
+    current.netCapacityGbps = metrics.netCapacityGbps ?? null;
+    current.previousNetBytesTx = sample.net_bytes_tx ?? current.previousNetBytesTx ?? null;
+    current.previousNetBytesRx = sample.net_bytes_rx ?? current.previousNetBytesRx ?? null;
+    current.previousSampleTimestamp = sampleTimestamp;
     current.positionOverride = sample.position
       ? {
           x: sample.position.x,
@@ -129,7 +150,13 @@ export class DigitalTwinService {
       renderedHosts.push(twinHost);
 
       const throughputGbps = this.estimateThroughput(host.metrics);
-      const utilization = Math.min(1, host.metrics.cpuLoad / 100);
+      const capacityGbps = host.metrics.netCapacityGbps ?? host.netCapacityGbps ?? null;
+      let utilization: number;
+      if (capacityGbps && capacityGbps > 0) {
+        utilization = Math.min(1, throughputGbps / capacityGbps);
+      } else {
+        utilization = Math.min(1, Math.max(host.metrics.cpuLoad / 100, throughputGbps / 10));
+      }
 
       links.push({
         id: `${egoHost.hostname}::${host.hostname}`,
@@ -137,6 +164,7 @@ export class DigitalTwinService {
         target: host.hostname,
         throughputGbps: Number(throughputGbps.toFixed(3)),
         utilization: Number(utilization.toFixed(3)),
+        capacityGbps: capacityGbps ? Number(capacityGbps.toFixed(3)) : null,
       });
     });
 
@@ -177,11 +205,115 @@ export class DigitalTwinService {
   }
 
   private estimateThroughput(metrics: HostMetricsSummary): number {
+    if (metrics.netThroughputGbps != null) {
+      return Math.max(0, metrics.netThroughputGbps);
+    }
+
     const base = metrics.netBytesTx ?? metrics.netBytesRx ?? 0;
     if (base > 0) {
-      return (base * 8) / 1_000_000_000;
+      return Math.max(0.01, (base * 8) / 1_000_000_000);
     }
-    return Math.max(0.05, (metrics.cpuLoad / 100) * 10);
+    return Math.max(0.05, (metrics.cpuLoad / 100) * 2);
+  }
+
+  private parseTimestamp(timestamp: string | undefined, fallbackMs: number): number {
+    if (timestamp) {
+      const parsed = Date.parse(timestamp);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+    return fallbackMs;
+  }
+
+  private extractCapacityGbps(sample: MetricSample, fallback?: number | null): number | null {
+    const tags = sample.tags ?? {};
+    const tagCandidate =
+      tags?.primary_interface_speed_mbps ??
+      tags?.interface_speed_mbps ??
+      tags?.link_speed_mbps ??
+      null;
+
+    let capacity = fallback ?? null;
+
+    if (tagCandidate) {
+      const parsedTag = Number(tagCandidate);
+      if (Number.isFinite(parsedTag) && parsedTag > 0) {
+        capacity = parsedTag / 1_000;
+      }
+    }
+
+    if (!capacity) {
+      const fromInterfaces = this.extractCapacityFromInterfaces(sample);
+      if (fromInterfaces) {
+        capacity = fromInterfaces;
+      }
+    }
+
+    return capacity;
+  }
+
+  private extractCapacityFromInterfaces(sample: MetricSample): number | null {
+    const raw = (sample as Record<string, unknown>).interfaces;
+    if (!Array.isArray(raw)) {
+      return null;
+    }
+
+    let bestSpeedMbps = 0;
+    for (const entry of raw) {
+      if (!entry || typeof entry !== 'object') continue;
+      const speedCandidate = Number((entry as Record<string, unknown>).speed_mbps);
+      const isUp = (entry as Record<string, unknown>).is_up;
+      if (Number.isFinite(speedCandidate) && speedCandidate > bestSpeedMbps && (isUp === true || isUp === undefined)) {
+        bestSpeedMbps = speedCandidate;
+      }
+    }
+
+    if (bestSpeedMbps > 0) {
+      return bestSpeedMbps / 1_000;
+    }
+    return null;
+  }
+
+  private computeThroughputGbps(state: HostState, sample: MetricSample, sampleTimestamp: number): number | null {
+    const prevTimestamp = state.previousSampleTimestamp;
+    const txNow = sample.net_bytes_tx ?? null;
+    const rxNow = sample.net_bytes_rx ?? null;
+
+    if (txNow == null && rxNow == null) {
+      return null;
+    }
+
+    if (prevTimestamp && sampleTimestamp > prevTimestamp) {
+      const deltaSeconds = (sampleTimestamp - prevTimestamp) / 1000;
+      if (deltaSeconds <= 0) {
+        return null;
+      }
+
+      const previousTx = state.previousNetBytesTx ?? txNow ?? 0;
+      const previousRx = state.previousNetBytesRx ?? rxNow ?? 0;
+
+      let deltaTx = txNow != null ? txNow - previousTx : 0;
+      let deltaRx = rxNow != null ? rxNow - previousRx : 0;
+
+      if (!Number.isFinite(deltaTx)) deltaTx = 0;
+      if (!Number.isFinite(deltaRx)) deltaRx = 0;
+      if (deltaTx < 0) deltaTx = 0;
+      if (deltaRx < 0) deltaRx = 0;
+
+      const totalDeltaBytes = deltaTx + deltaRx;
+      if (totalDeltaBytes <= 0) {
+        return 0;
+      }
+
+      const bitsPerSecond = (totalDeltaBytes * 8) / deltaSeconds;
+      const gbps = bitsPerSecond / 1_000_000_000;
+      if (Number.isFinite(gbps)) {
+        return Number(gbps.toFixed(4));
+      }
+    }
+
+    return null;
   }
 
   private ensureIp(hostname: string, candidate?: string): string {
@@ -237,6 +369,12 @@ export class DigitalTwinService {
 
   private buildEgoHost(egoState: HostState | undefined, timestamp: number): HostTwinState {
     const metrics = egoState?.metrics ?? this.defaultCoreMetrics();
+    if (metrics.netThroughputGbps == null) {
+      metrics.netThroughputGbps = egoState?.metrics?.netThroughputGbps ?? 0;
+    }
+    if (metrics.netCapacityGbps == null) {
+      metrics.netCapacityGbps = egoState?.netCapacityGbps ?? null;
+    }
     const ip = egoState?.ip ?? EGO_PRIMARY_IP;
     const lastSeenTimestamp = egoState?.lastSeen ?? timestamp;
     const status = egoState ? this.resolveStatus(timestamp - egoState.lastSeen) : 'online';
@@ -276,6 +414,8 @@ export class DigitalTwinService {
       gpuTemperature: null,
       netBytesTx: null,
       netBytesRx: null,
+      netThroughputGbps: null,
+      netCapacityGbps: null,
     };
   }
 }

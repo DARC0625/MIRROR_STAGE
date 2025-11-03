@@ -75,26 +75,31 @@
   - `MIRROR_STAGE_METRICS_URL`, `MIRROR_STAGE_SEED_INTERVAL_MS` 환경변수로 엔드포인트·주기 오버라이드
 - 8개의 가상 호스트가 랙/좌표와 함께 생성되며 CPU·메모리·네트워크 지표를 주기적으로 변화시켜 2.5D 레이아웃, 링크 색상 변화를 빠르게 체험할 수 있습니다.
 - EGO 백엔드 메트릭은 TypeORM을 통해 SQLite(`mirror_stage.db`)에 기본 저장됩니다. TimescaleDB/PostgreSQL 사용 시 `MIRROR_STAGE_DB_URL` 환경변수를 지정하세요.
+## 5. 실시간 데이터 품질 강화
+- **EGO 자가 모니터링**: `EgoMonitorService`가 `systeminformation` 기반으로 EGO 서버의 CPU·메모리·네트워크 용량을 1초~5초 간격으로 수집합니다. `MIRROR_STAGE_EGO_MONITOR_ENABLED/INTERVAL_MS` 환경변수로 제어할 수 있습니다.
+- **REFLECTOR v0.2**: 에이전트가 인터페이스 속도, 패킷 에러, 디스크 사용량, 센서 온도 등을 함께 전송하며 `tags.primary_interface_speed_mbps`에 링크 용량을 명시합니다.
+- **링크 활용률 모델**: Digital Twin 엔진이 각 호스트의 누적 바이트와 타임스탬프를 비교해 Gbps 단위 스루풋과 용량 대비 활용률을 계산, 링크 두께·색상에 반영합니다.
+- **설치 로그 텔레메트리**: Windows 설치 PowerShell 스크립트가 명령 실행 경로·명령줄·stdout/stderr를 실시간으로 로그와 진행 파일에 기록해 문제 분석을 용이하게 합니다.
 
-필수/권장 사전 준비 사항
+## 6. 필수/권장 사전 준비 사항
 - Node.js 20.x (EGO 백엔드). 예: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`
 - Flutter 3.35.5 이상 또는 FVM (EGO 프런트엔드)
 - Python 3.12 + `python3-venv` (REFLECTOR)
 
-## 5. 초기 MVP 범위
+## 7. 초기 MVP 범위
 1. **인벤토리**: 호스트 등록, 메타데이터 저장, 목록/상세 UI.
 2. **메트릭 수집**: 에이전트가 5초마다 CPU·메모리·로드 전송 → 백엔드 검증 후 TimescaleDB 적재.
 3. **실시간 대시보드**: 테이블+스파크라인 UI, WebSocket으로 즉시 갱신.
 4. **명령 실행**: 임의 호스트에 `uptime`과 같은 명령 전달, stdout/stderr 수집 및 표시.
 5. **인증**: 단일 사용자 로그인(TOTP) + 에이전트용 API 토큰.
 
-## 6. 보안 및 네트워킹
+## 8. 보안 및 네트워킹
 - 에이전트 ↔ 게이트웨이 상호 TLS, 인증서 자동 갱신
 - 주제(topic) 단위 권한 제어, 호스트별 자격 증명
 - Vault 호환 비밀 관리(개발 단계에서는 dotenv 사용)
 - 모든 명령과 결과에 대한 감사 로그
 
-## 7. 단기 로드맵
+## 9. 단기 로드맵
 1. 백엔드/프런트엔드/에이전트 디렉터리 스캐폴딩 및 devcontainer·docker-compose 구성
 2. `HostMetrics`, `CommandRequest`, `CommandResult`용 protobuf/OpenAPI 스키마 정의
 3. 백엔드 뼈대 구현:
@@ -108,7 +113,7 @@
 6. 네트워크 토폴로지·공간 데이터 스키마 정의 및 미러월드 3D 뷰 프로토타입 제작
 7. 로컬 멀티 호스트 시뮬레이션용 docker-compose 시나리오 추가
 
-## 8. 다음 액션 체크리스트
+## 10. 다음 액션 체크리스트
 - [ ] TimescaleDB vs InfluxDB 최종 결정
 - [ ] `docs/api-contracts.md`에 상세 API/큐 명세 작성
 - [ ] pre-commit 훅(ruff, black, eslint, prettier 등) 구성
@@ -116,7 +121,7 @@
 - [ ] 테스트 호스트 1대로 메트릭 수집 엔드투엔드 검증
 - [ ] 네트워크 장비 위치/케이블/레이블 정보를 위한 디지털 트윈 메타데이터 스키마 확정
 
-## 9. 환경 관리 원칙
+## 11. 환경 관리 원칙
 - **EGO 백엔드(NestJS)**: 설치 프로그램이 Node 20.x 런타임을 `%LOCALAPPDATA%\MIRROR_STAGE\tools\node`(또는 사용자가 지정한 루트) 아래에 내려받아 `npm ci`, `npm run build`를 수행합니다. 런처는 `node dist/main.js`를 실행해 정적 자산과 API를 동시에 제공합니다.
 - **EGO 프런트엔드(Flutter)**: 배포 시 `flutter build web` 결과물을 `frontend/build/web`에 생성해 백엔드에서 정적 제공하므로, 운영 시에는 Flutter SDK가 필요하지 않습니다. UI 개발/커스터마이징이 필요할 때만 FVM 또는 `%LOCALAPPDATA%\MIRROR_STAGE\tools\flutter` SDK를 사용해 다시 빌드합니다.
 - **REFLECTOR 에이전트(Python)**: `mirror_stage/reflector` 에 전용 가상환경(`python3 -m venv .venv`). 활성화 상태에서만 패키지 설치 및 스크립트 실행. 각 10.0.0.x 호스트에 배포 시 동일 구조 유지.

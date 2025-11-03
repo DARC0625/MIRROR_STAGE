@@ -374,7 +374,11 @@ function Invoke-LoggedProcess {
         [string]$Description
     )
 
+    $startedAt = Get-Date
+    $commandLine = "$FilePath $Arguments"
     Write-Log "[Installer] $Description" ([ConsoleColor]::DarkGray)
+    Write-Log "[Installer]   WorkingDirectory: $WorkingDirectory" ([ConsoleColor]::DarkGray)
+    Write-Log "[Installer]   CommandLine: $commandLine" ([ConsoleColor]::DarkGray)
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $FilePath
     $psi.Arguments = $Arguments
@@ -383,12 +387,40 @@ function Invoke-LoggedProcess {
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
-    $process = [System.Diagnostics.Process]::Start($psi)
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $psi
+
+    $stdoutHandler = {
+        param($sender, $eventArgs)
+        if ($eventArgs.Data) {
+            $line = "[Installer][$Description][stdout] $($eventArgs.Data)"
+            Write-Log $line ([ConsoleColor]::DarkGray) -SkipBroadcast
+        }
+    }
+    $stderrHandler = {
+        param($sender, $eventArgs)
+        if ($eventArgs.Data) {
+            $line = "[Installer][$Description][stderr] $($eventArgs.Data)"
+            Write-Log $line ([ConsoleColor]::Yellow) -SkipBroadcast
+            Write-ProgressRecord -Kind 'ERROR' -Payload $eventArgs.Data
+        }
+    }
+
+    $null = $process.add_OutputDataReceived($stdoutHandler)
+    $null = $process.add_ErrorDataReceived($stderrHandler)
+
+    if (-not $process.Start()) {
+        throw "$Description failed to start (command: $commandLine)"
+    }
+
+    $process.BeginOutputReadLine()
+    $process.BeginErrorReadLine()
     $process.WaitForExit()
-    if ($stdout) { Add-Content -Path $logFile -Value $stdout }
-    if ($stderr) { Add-Content -Path $logFile -Value $stderr }
+
+    $endedAt = Get-Date
+    $duration = $endedAt - $startedAt
+    Write-Log "[Installer]   ExitCode: $($process.ExitCode) (Duration: $([Math]::Round($duration.TotalSeconds, 2)) s)" ([ConsoleColor]::DarkGray)
+
     if ($process.ExitCode -ne 0) {
         throw "$Description failed (ExitCode: $($process.ExitCode))"
     }

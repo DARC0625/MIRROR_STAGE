@@ -32,6 +32,7 @@ export class MetricsService {
       const netBytesTx = sample.net_bytes_tx != null ? Number(sample.net_bytes_tx) : null;
       const netBytesRx = sample.net_bytes_rx != null ? Number(sample.net_bytes_rx) : null;
       const gpuTemperature = sample.gpu_temperature != null ? Number(sample.gpu_temperature) : null;
+      const netCapacityGbps = this.extractCapacityGbps(sample);
 
       const entity = this.hostMetricsRepository.create({
         hostname,
@@ -47,6 +48,8 @@ export class MetricsService {
         gpuTemperature,
         netBytesTx,
         netBytesRx,
+        netCapacityGbps,
+        netThroughputGbps: null,
         tags,
         positionX: position?.x ?? null,
         positionY: position?.y ?? null,
@@ -63,5 +66,36 @@ export class MetricsService {
     }
 
     return processed;
+  }
+
+  private extractCapacityGbps(sample: MetricSample): number | null {
+    const tags = sample.tags ?? {};
+    const candidate =
+      tags?.primary_interface_speed_mbps ??
+      tags?.interface_speed_mbps ??
+      tags?.link_speed_mbps ??
+      null;
+    if (candidate) {
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed / 1_000;
+      }
+    }
+
+    const raw = (sample as Record<string, unknown>).interfaces;
+    if (Array.isArray(raw)) {
+      let best = 0;
+      for (const iface of raw) {
+        if (!iface || typeof iface !== 'object') continue;
+        const speed = Number((iface as Record<string, unknown>).speed_mbps);
+        if (Number.isFinite(speed) && speed > best) {
+          best = speed;
+        }
+      }
+      if (best > 0) {
+        return best / 1_000;
+      }
+    }
+    return null;
   }
 }

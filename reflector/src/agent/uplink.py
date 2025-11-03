@@ -32,6 +32,12 @@ def build_payload(config: Dict[str, Any]) -> Dict[str, Any]:
         snapshot["rack"] = config["rack"]
     if "position" in config:
         snapshot["position"] = config["position"]
+    tags = snapshot.get("tags")
+    if not isinstance(tags, dict):
+        tags = {}
+        snapshot["tags"] = tags
+    for key, value in config.get("tags", {}).items():
+        tags[str(key)] = str(value)
     return {"samples": [snapshot]}
 
 

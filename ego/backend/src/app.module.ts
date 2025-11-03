@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
 import { AppController } from './app.controller';
@@ -9,6 +9,7 @@ import { AppService } from './app.service';
 import { MetricsModule } from './metrics/metrics.module';
 import { DigitalTwinModule } from './twin/digital-twin.module';
 import { HostMetricEntity } from './persistence/host-metric.entity';
+import { EgoMonitorModule } from './ego-monitor/ego-monitor.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { HostMetricEntity } from './persistence/host-metric.entity';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -62,6 +64,7 @@ import { HostMetricEntity } from './persistence/host-metric.entity';
     }),
     DigitalTwinModule,
     MetricsModule,
+    EgoMonitorModule,
   ],
   controllers: [AppController],
   providers: [AppService],

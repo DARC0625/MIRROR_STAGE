@@ -115,6 +115,16 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                         label: '총 링크 부하',
                         value: '${(frame.linkUtilization * 100).clamp(0, 100).toStringAsFixed(0)}%',
                       ),
+                      _StatusChip(
+                        label: '총 스루풋',
+                        value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
+                      ),
+                      _StatusChip(
+                        label: '총 링크 용량',
+                        value: frame.totalLinkCapacity > 0
+                            ? '${frame.totalLinkCapacity.toStringAsFixed(2)} Gbps'
+                            : 'N/A',
+                      ),
                     ],
                   ),
                 ),
@@ -198,8 +208,18 @@ class _Sidebar extends StatelessWidget {
             value: '${frame.averageMemoryLoad.toStringAsFixed(1)}%',
           ),
           _MetricTile(
-            label: '추정 스루풋',
+            label: '실시간 스루풋',
             value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
+            caption: frame.maxHostThroughput > 0
+                ? '호스트 최대 ${frame.maxHostThroughput.toStringAsFixed(2)} Gbps'
+                : null,
+          ),
+          _MetricTile(
+            label: '평균 링크 활용률',
+            value: '${(frame.linkUtilization * 100).clamp(0, 100).toStringAsFixed(1)}%',
+            caption: frame.totalLinkCapacity > 0
+                ? '총 용량 ${frame.totalLinkCapacity.toStringAsFixed(2)} Gbps'
+                : null,
           ),
           const SizedBox(height: 32),
           Text(
@@ -303,13 +323,36 @@ class _InsightPanel extends StatelessWidget {
             ...topHosts.map(
               (host) => _ActivityTile(
                 timestamp: host.lastSeen.toLocal().toIso8601String(),
-                summary:
-                    '${host.displayName} (${host.ip}) — CPU ${host.metrics.cpuLoad.toStringAsFixed(1)}%, RAM ${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%',
+                summary: _hostSummary(host),
               ),
             ),
         ],
       ),
     );
+  }
+
+  String _hostSummary(TwinHost host) {
+    final cpu = host.metrics.cpuLoad.toStringAsFixed(1);
+    final memory = host.metrics.memoryUsedPercent.toStringAsFixed(1);
+    final throughput = host.metrics.netThroughputGbps;
+    final capacity = host.metrics.netCapacityGbps;
+
+    final segments = <String>[
+      '${host.displayName} (${host.ip})',
+      'CPU $cpu%',
+      'RAM $memory%',
+    ];
+
+    if (throughput != null && throughput > 0) {
+      final head = throughput.toStringAsFixed(2);
+      String netText = 'NET $head Gbps';
+      if (capacity != null && capacity > 0) {
+        netText = 'NET $head / ${capacity.toStringAsFixed(2)} Gbps';
+      }
+      segments.add(netText);
+    }
+
+    return segments.join(' — ');
   }
 }
 

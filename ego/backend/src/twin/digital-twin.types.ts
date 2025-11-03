@@ -8,6 +8,8 @@ export interface HostMetricsSummary {
   gpuTemperature?: number | null;
   netBytesTx?: number | null;
   netBytesRx?: number | null;
+  netThroughputGbps?: number | null;
+  netCapacityGbps?: number | null;
 }
 
 export interface TwinPosition {
@@ -36,6 +38,7 @@ export interface TwinLink {
   target: string;
   throughputGbps: number;
   utilization: number;
+  capacityGbps?: number | null;
 }
 
 export interface TwinState {

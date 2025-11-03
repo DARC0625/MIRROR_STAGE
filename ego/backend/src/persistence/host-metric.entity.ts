@@ -41,6 +41,12 @@ export class HostMetricEntity {
   @Column({ type: 'integer', nullable: true })
   netBytesRx!: number | null;
 
+  @Column({ type: 'float', nullable: true })
+  netThroughputGbps!: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  netCapacityGbps!: number | null;
+
   @Column({ type: 'simple-json', nullable: true })
   tags!: Record<string, string> | null;
 

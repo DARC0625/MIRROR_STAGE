@@ -10,6 +10,7 @@
   - Disk: per-mount usage, IOPS, SMART health.
   - GPU: NVIDIA stats via `nvidia-smi` (fallback to ROCm/Intel support later).
   - Network: per-interface throughput, errors, latency to configurable targets.
+  - Link capacity: export NIC speed/duplex as `tags.primary_interface_speed_mbps` for 활용률 계산.
   - Processes: top-k resource consumers.
 - Scheduler emits payload every 5s (configurable).
 - Command executor:
@@ -72,6 +73,7 @@
   - 3D 공간은 사전 정의된 좌표(서버 룸 맵) + 실시간 위치 업데이트.
 - 씬 빌더는 JSON 혹은 glTF 포맷으로 Flutter 앱에 전달, 장비 상태(온도, 대역폭, 알람)를 머티리얼 속성으로 인코딩.
 - 장면 변화 발생 시 이벤트 큐(`visualization.updates`)로 diff를 발행, 클라이언트는 부분 업데이트만 적용.
+- 링크 활용률 계산: 호스트 누적 바이트 + 링크 속도를 비교해 Gbps/Utilization을 산출, 링크 두께·색상으로 가시화.
 
 ## Data Flow (Happy Path)
 1. Agent collects metrics → signs payload → POST `/metrics/batch`.

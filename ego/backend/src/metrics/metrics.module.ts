@@ -9,5 +9,6 @@ import { HostMetricEntity } from '../persistence/host-metric.entity';
   imports: [DigitalTwinModule, TypeOrmModule.forFeature([HostMetricEntity])],
   controllers: [MetricsController],
   providers: [MetricsService],
+  exports: [MetricsService],
 })
 export class MetricsModule {}

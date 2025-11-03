@@ -26,6 +26,14 @@ reflector/
 └── README.md
 ```
 
+## 수집 지표 (v0.2)
+- CPU 전체/코어별 사용률, load average
+- 메모리 총량/사용량, 스왑 사용률
+- 각 네트워크 인터페이스의 전송/수신 바이트, 패킷, 에러, 링크 속도(Mbps)
+- 디스크 파티션별 총 용량과 사용량
+- 센서 온도(`psutil.sensors_temperatures`)가 감지될 경우 최고 온도
+- `tags.primary_interface_speed_mbps` 등 주요 속성을 자동 설정해 링크 용량을 백엔드에 전달합니다.
+
 ## 실행 (임시)
 ```bash
 source .venv/bin/activate

@@ -36,6 +36,8 @@ class HostMetricsSummary {
     this.gpuTemperature,
     this.netBytesTx,
     this.netBytesRx,
+    this.netThroughputGbps,
+    this.netCapacityGbps,
   });
 
   final double cpuLoad;
@@ -45,6 +47,8 @@ class HostMetricsSummary {
   final double? gpuTemperature;
   final double? netBytesTx;
   final double? netBytesRx;
+  final double? netThroughputGbps;
+  final double? netCapacityGbps;
 
   factory HostMetricsSummary.fromJson(Map<String, dynamic> json) {
     return HostMetricsSummary(
@@ -55,6 +59,8 @@ class HostMetricsSummary {
       gpuTemperature: (json['gpuTemperature'] as num?)?.toDouble(),
       netBytesTx: (json['netBytesTx'] as num?)?.toDouble(),
       netBytesRx: (json['netBytesRx'] as num?)?.toDouble(),
+      netThroughputGbps: (json['netThroughputGbps'] as num?)?.toDouble(),
+      netCapacityGbps: (json['netCapacityGbps'] as num?)?.toDouble(),
     );
   }
 }
@@ -125,6 +131,7 @@ class TwinLink {
     required this.target,
     required this.throughputGbps,
     required this.utilization,
+    this.capacityGbps,
   });
 
   final String id;
@@ -132,6 +139,7 @@ class TwinLink {
   final String target;
   final double throughputGbps;
   final double utilization;
+  final double? capacityGbps;
 
   factory TwinLink.fromJson(Map<String, dynamic> json) {
     return TwinLink(
@@ -140,6 +148,7 @@ class TwinLink {
       target: json['target'] as String? ?? '',
       throughputGbps: (json['throughputGbps'] as num?)?.toDouble() ?? 0,
       utilization: (json['utilization'] as num?)?.toDouble() ?? 0,
+      capacityGbps: (json['capacityGbps'] as num?)?.toDouble(),
     );
   }
 }
@@ -234,6 +243,18 @@ class TwinStateFrame {
   double get estimatedThroughput {
     if (links.isEmpty) return 0;
     return links.fold<double>(0, (acc, link) => acc + link.throughputGbps);
+  }
+
+  double get totalLinkCapacity {
+    if (links.isEmpty) return 0;
+    return links.fold<double>(0, (acc, link) => acc + (link.capacityGbps ?? 0));
+  }
+
+  double get maxHostThroughput {
+    return hosts
+        .where((host) => !host.isCore)
+        .map((host) => host.metrics.netThroughputGbps ?? 0)
+        .fold<double>(0, math.max);
   }
 
   double get maxRadius {
