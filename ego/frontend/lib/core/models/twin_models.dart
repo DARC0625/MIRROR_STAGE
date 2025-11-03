@@ -91,8 +91,7 @@ class TwinHost {
 
   double get uptimeHours => metrics.uptimeSeconds / 3600.0;
 
-  String get displayLabel => label ?? '${displayName}
-$ip';
+  String get displayLabel => label ?? '${displayName}\n$ip';
 
   factory TwinHost.fromJson(Map<String, dynamic> json) {
     final statusString = (json['status'] as String? ?? 'offline').toLowerCase();
