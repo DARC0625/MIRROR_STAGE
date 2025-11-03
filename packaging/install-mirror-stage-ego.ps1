@@ -415,7 +415,16 @@ function Invoke-LoggedProcess {
 
     $process.BeginOutputReadLine()
     $process.BeginErrorReadLine()
-    $process.WaitForExit()
+
+    $heartbeatInterval = [TimeSpan]::FromSeconds(20)
+    $lastHeartbeat = Get-Date
+    while (-not $process.HasExited) {
+        Start-Sleep -Seconds 1
+        if (((Get-Date) - $lastHeartbeat) -ge $heartbeatInterval) {
+            Write-Log "[Installer]   $Description is still running..." ([ConsoleColor]::DarkGray) -SkipBroadcast
+            $lastHeartbeat = Get-Date
+        }
+    }
 
     $endedAt = Get-Date
     $duration = $endedAt - $startedAt
