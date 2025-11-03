@@ -382,50 +382,66 @@ function Test-SymlinkSupport {
     }
 }
 
+function Test-IsElevated {
+    try {
+        $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
+}
+
+function Ensure-Elevation {
+    if (Test-IsElevated) {
+        return
+    }
+
+    Write-Log "[Installer] Requesting administrator privileges (UAC prompt)" ([ConsoleColor]::Yellow)
+
+    $arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath)
+    if ($InstallRoot) { $arguments += "-InstallRoot"; $arguments += $InstallRoot }
+    if ($RepoUrl) { $arguments += "-RepoUrl"; $arguments += $RepoUrl }
+    if ($Branch) { $arguments += "-Branch"; $arguments += $Branch }
+    if ($ForceRepoSync.IsPresent) { $arguments += "-ForceRepoSync" }
+    if ($ProgressLogPath) { $arguments += "-ProgressLogPath"; $arguments += $ProgressLogPath }
+
+    try {
+        $process = Start-Process -FilePath "powershell.exe" -ArgumentList $arguments -Verb RunAs -PassThru
+    } catch {
+        throw "Administrator privileges are required to install MIRROR STAGE EGO. UAC elevation was cancelled or denied."
+    }
+
+    $process.WaitForExit()
+    $exit = $process.ExitCode
+    Write-Log "[Installer] Elevated installer process exited with code $exit" ([ConsoleColor]::DarkGray)
+    exit $exit
+}
+
 function Ensure-SymlinkSupport {
     if (Test-SymlinkSupport) {
         Write-Log "[Installer] Windows symbolic link support verified." ([ConsoleColor]::DarkGray)
         return
     }
 
-    $isElevated = $false
+    Write-Log "[Installer] Symbolic link privilege missing. Attempting to enable Developer Mode." ([ConsoleColor]::Yellow)
     try {
-        $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-        $isElevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        $keyPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+        if (-not (Test-Path $keyPath)) {
+            New-Item -Path $keyPath -Force | Out-Null
+        }
+        New-ItemProperty -Path $keyPath -Name "AllowDevelopmentWithoutDevLicense" -Value 1 -PropertyType DWord -Force | Out-Null
+        New-ItemProperty -Path $keyPath -Name "AllowAllTrustedApps" -Value 1 -PropertyType DWord -Force | Out-Null
     } catch {
-        $isElevated = $false
+        Write-Log "[Installer] Failed to enable Developer Mode automatically: $_" ([ConsoleColor]::Yellow)
     }
 
-    if ($isElevated) {
-        Write-Log "[Installer] Attempting to enable Developer Mode (symbolic link privilege)." ([ConsoleColor]::Yellow)
-        try {
-            $keyPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
-            if (-not (Test-Path $keyPath)) {
-                New-Item -Path $keyPath -Force | Out-Null
-            }
-            New-ItemProperty -Path $keyPath -Name "AllowDevelopmentWithoutDevLicense" -Value 1 -PropertyType DWord -Force | Out-Null
-            New-ItemProperty -Path $keyPath -Name "AllowAllTrustedApps" -Value 1 -PropertyType DWord -Force | Out-Null
-        } catch {
-            Write-Log "[Installer] Failed to toggle Developer Mode automatically: $_" ([ConsoleColor]::Yellow)
-        }
-
-        Start-Sleep -Seconds 2
-        if (Test-SymlinkSupport) {
-            Write-Log "[Installer] Symbolic link support became available after enabling Developer Mode." ([ConsoleColor]::DarkGray)
-            return
-        }
+    Start-Sleep -Seconds 2
+    if (Test-SymlinkSupport) {
+        Write-Log "[Installer] Symbolic link support verified after updating Developer Mode." ([ConsoleColor]::DarkGray)
+        return
     }
 
-    if (-not $env:CI) {
-        Write-Log "[Installer] Developer Mode is disabled. Opening Windows settings: start ms-settings:developers" ([ConsoleColor]::Yellow)
-        try {
-            Start-Process "ms-settings:developers" | Out-Null
-        } catch {
-            Write-Log "[Installer] Unable to launch Developer Mode settings automatically: $_" ([ConsoleColor]::Yellow)
-        }
-    }
-
-    throw "Symbolic links are not permitted for the current user. Enable Developer Mode (Settings > Privacy & security > For developers) or rerun this installer from an elevated PowerShell session after granting the privilege."
+    throw "Symbolic links remain unavailable. Ensure the installer runs with administrative privileges or grant the 'Create symbolic links' right to this account, then rerun the installer."
 }
 
 function Invoke-LoggedProcess {
@@ -516,6 +532,8 @@ try {
     $backendDir = Join-Path $egoRoot "backend"
     $frontendDir = Join-Path $egoRoot "frontend"
     $toolsDir = Join-Path $InstallRoot "tools"
+
+    Ensure-Elevation
 
     if ($ForceRepoSync) {
         Write-Log "[Installer] Force syncing repository from $RepoUrl ($Branch)" ([ConsoleColor]::Yellow)
