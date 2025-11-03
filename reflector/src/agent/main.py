@@ -1,18 +1,18 @@
-"""Minimal runner for the MIRROR STAGE REFLECTOR host agent."""
+"""Entry point for MIRROR STAGE REFLECTOR."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-from typing import Any
+import asyncio
 
+from .runtime import run_agent
 from .telemetry import collect_snapshot
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="MIRROR STAGE REFLECTOR placeholder. Collects telemetry once or on an interval.",
+        description="Run MIRROR STAGE REFLECTOR agent (telemetry + command loops).",
     )
     parser.add_argument(
         "--once",
@@ -20,10 +20,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Collect a single telemetry snapshot and print the JSON payload.",
     )
     parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config.json (defaults to MIRROR_STAGE_REFLECTOR_CONFIG or bundled config).",
+    )
+    parser.add_argument(
         "--interval",
         type=float,
-        default=5.0,
-        help="Collection interval in seconds when running continuously.",
+        default=None,
+        help="Override telemetry interval (seconds).",
     )
     return parser.parse_args(argv)
 
@@ -33,18 +39,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.once:
         snapshot = collect_snapshot()
+        import json
+
         print(json.dumps(snapshot.to_payload(), indent=2))
         return 0
 
     try:
-        import time
-
-        while True:
-            snapshot = collect_snapshot()
-            print(json.dumps(snapshot.to_payload()))
-            time.sleep(max(args.interval, 1.0))
+        asyncio.run(run_agent(config_path=args.config, interval_override=args.interval))
     except KeyboardInterrupt:
         return 0
+    return 0
 
 
 if __name__ == "__main__":

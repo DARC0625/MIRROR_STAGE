@@ -89,6 +89,7 @@
 - **REFLECTOR v0.2**: 에이전트가 인터페이스 속도, 패킷 에러, 디스크 사용량, 센서 온도 등을 함께 전송하며 `tags.primary_interface_speed_mbps`에 링크 용량을 명시합니다.
 - **링크 활용률 모델**: Digital Twin 엔진이 각 호스트의 누적 바이트와 타임스탬프를 비교해 Gbps 단위 스루풋과 용량 대비 활용률을 계산, 링크 두께·색상에 반영합니다.
 - **임계치 알람**: CPU/메모리/온도/링크 혼잡도를 감시해 `GET /api/alerts/active`에서 조회 가능한 알람으로 승격합니다. 추후 ML 기반 이상탐지로 확장 예정입니다.
+- **REFLECTOR 명령 루프(초기 버전)**: `command_endpoint`가 설정된 에이전트는 명령 큐를 폴링하고, 실행 결과(stdout/stderr/exitCode)를 보고합니다.
 - **설치 로그 텔레메트리**: Windows 설치 PowerShell 스크립트가 명령 실행 경로·명령줄·stdout/stderr를 실시간으로 로그와 진행 파일에 기록해 문제 분석을 용이하게 합니다.
 
 ## 7. 필수/권장 사전 준비 사항

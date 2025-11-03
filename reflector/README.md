@@ -26,20 +26,22 @@ reflector/
 └── README.md
 ```
 
-## 수집 지표 (v0.2)
-- CPU 전체/코어별 사용률, load average
-- 메모리 총량/사용량, 스왑 사용률
-- 각 네트워크 인터페이스의 전송/수신 바이트, 패킷, 에러, 링크 속도(Mbps)
+## 수집 지표 & 기능 (v0.3)
+- CPU 전체/코어별 사용률, load average, 클럭(MHz)
+- 메모리 총량·사용량, 스왑 사용률
+- 네트워크 인터페이스별 전송/수신 바이트, 패킷, 드롭/에러, 링크 속도(Mbps)
 - 디스크 파티션별 총 용량과 사용량
 - 센서 온도(`psutil.sensors_temperatures`)가 감지될 경우 최고 온도
-- `tags.primary_interface_speed_mbps` 등 주요 속성을 자동 설정해 링크 용량을 백엔드에 전달합니다.
+- 상위 CPU 사용 프로세스 목록(top-K)
+- `tags.primary_interface_speed_mbps` 등을 자동 설정하여 링크 용량을 백엔드에 전달, 필요 시 `config.json`의 `tags`로 덮어쓰기
+- (선택) `command_endpoint`를 지정하면 명령 큐를 폴링하고 결과를 리포트
 
 ## 실행 (임시)
 ```bash
 source .venv/bin/activate
 PYTHONPATH=src python -m agent.main --once
 ```
-현재는 단일 샘플 메트릭을 출력하는 플레이스홀더이며, 추후 MQTT/HTTPS 업링크 및 명령 실행 루프가 추가됩니다.
+단일 샘플을 수집해 JSON으로 출력합니다.
 
 ## 연속 업링크
 - `config.json`에 백엔드 엔드포인트와 좌표/랙 정보를 정의.
@@ -60,3 +62,17 @@ PYTHONPATH=src python -m agent.main --once
   ```
 
 `config.json` 경로를 바꾸고 싶다면 `MIRROR_STAGE_REFLECTOR_CONFIG` 환경변수에 다른 파일 경로를 지정하세요.
+
+### config.json 예시
+```jsonc
+{
+  "endpoint": "http://10.0.0.100:3000/api/metrics/batch",
+  "hostname_override": "rack-a-01",
+  "rack": "Rack-A",
+  "position": {"x": -3.2, "y": 1.0, "z": 4.4},
+  "interval_seconds": 5,
+  "tags": {"environment": "production"},
+  "command_endpoint": "http://10.0.0.100:3000/api/commands",
+  "command_poll_seconds": 15
+}
+```

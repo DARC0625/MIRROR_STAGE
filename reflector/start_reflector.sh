@@ -29,7 +29,7 @@ echo "Starting MIRROR STAGE REFLECTOR..."
   source "${VENV}/bin/activate"
   export PYTHONPATH="${ROOT_DIR}/src"
   export PYTHONUNBUFFERED=1
-  nohup "${VENV}/bin/python" -m agent.uplink >> "${LOG_DIR}/reflector.log" 2>&1 &
+  nohup "${VENV}/bin/python" -m agent.main >> "${LOG_DIR}/reflector.log" 2>&1 &
   echo $! > "${PID_FILE}"
 )
 

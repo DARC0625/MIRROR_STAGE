@@ -6,7 +6,7 @@ import platform
 import socket
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import psutil
 
@@ -82,6 +82,7 @@ def _collect_extras() -> Dict[str, Any]:
     extras["disks"] = disks
     extras["interfaces"] = interfaces
     extras["temperatures"] = _collect_temperatures()
+    extras["top_processes"] = _collect_top_processes()
 
     tags: Dict[str, str] = {}
     primary_interface = next((iface for iface in interfaces if iface.get("is_up")), None) or (interfaces[0] if interfaces else None)
@@ -166,3 +167,28 @@ def _collect_temperatures() -> Dict[str, float]:
     except Exception:
         return {}
     return temps
+
+
+def _collect_top_processes(limit: int = 5) -> List[Dict[str, Any]]:
+    processes: List[Tuple[float, psutil.Process]] = []
+    try:
+        for proc in psutil.process_iter(attrs=["pid", "name"]):
+            try:
+                cpu = proc.cpu_percent(interval=None)
+                processes.append((cpu, proc))
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except Exception:
+        return []
+
+    top = sorted(processes, key=lambda item: item[0], reverse=True)[:limit]
+    result: List[Dict[str, Any]] = []
+    for cpu, proc in top:
+        try:
+            info = proc.as_dict(attrs=["pid", "name", "username"])
+            info["cpu_percent"] = cpu
+            info["memory_percent"] = proc.memory_percent()
+            result.append(info)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return result

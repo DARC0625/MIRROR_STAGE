@@ -3,5 +3,8 @@
   "hostname_override": "main-100",
   "rack": "CoreRack",
   "position": {"x": 2.5, "y": 0.6, "z": -1.4},
-  "interval_seconds": 5.0
+  "interval_seconds": 5.0,
+  "logging": {
+    "level": "INFO"
+  }
 }
