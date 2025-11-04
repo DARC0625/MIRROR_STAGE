@@ -606,7 +606,10 @@ function Invoke-NpmCiWithRetry {
         Invoke-LoggedProcess -FilePath $NpmPath -Arguments "ci" -WorkingDirectory $WorkingDirectory -Description $commandDescription
         return
     } catch {
-        $message = $_.Exception?.Message
+        $message = $null
+        if ($null -ne $_ -and $_ -is [System.Management.Automation.ErrorRecord] -and $_.Exception) {
+            $message = $_.Exception.Message
+        }
         if (-not $message) { $message = $_.ToString() }
         if ($message -notmatch 'EPERM' -and $message -notmatch '-4048') {
             throw
