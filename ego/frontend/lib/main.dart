@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'core/models/command_models.dart';
 import 'core/models/twin_models.dart';
+import 'core/services/command_service.dart';
 import 'core/services/twin_channel.dart';
 
 enum TwinViewportMode { topology, heatmap }
@@ -35,10 +38,9 @@ class MirrorStageApp extends StatelessWidget {
       title: 'MIRROR STAGE',
       debugShowCheckedModeBanner: false,
       theme: baseTheme.copyWith(
-        textTheme: GoogleFonts.ibmPlexSansTextTheme(baseTheme.textTheme).apply(
-          bodyColor: Colors.white,
-          displayColor: Colors.white,
-        ),
+        textTheme: GoogleFonts.ibmPlexSansTextTheme(
+          baseTheme.textTheme,
+        ).apply(bodyColor: Colors.white, displayColor: Colors.white),
         appBarTheme: AppBarTheme(
           backgroundColor: const Color(0xFF05080D),
           foregroundColor: colorScheme.onSurface,
@@ -109,8 +111,9 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
             ? candidate!
             : (_lastFrame ?? TwinStateFrame.empty());
 
-        TwinHost? selectedHost =
-            _selectedHostName != null ? frame.hostByName(_selectedHostName!) : null;
+        TwinHost? selectedHost = _selectedHostName != null
+            ? frame.hostByName(_selectedHostName!)
+            : null;
         if (selectedHost == null && frame.hosts.isNotEmpty) {
           selectedHost = frame.hosts.first;
           final fallbackName = selectedHost.hostname;
@@ -124,7 +127,9 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
           }
         }
 
-        final heatMax = frame.maxCpuTemperature > 0 ? frame.maxCpuTemperature : 100.0;
+        final heatMax = frame.maxCpuTemperature > 0
+            ? frame.maxCpuTemperature
+            : 100.0;
 
         return Scaffold(
           appBar: AppBar(
@@ -156,7 +161,8 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                       ),
                       _StatusChip(
                         label: '총 스루풋',
-                        value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
+                        value:
+                            '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
                       ),
                       _StatusChip(
                         label: '피크 온도',
@@ -245,7 +251,9 @@ class _Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cpuLoad = frame.averageCpuLoad.clamp(0, 100).toDouble();
-    final memoryPercent = frame.memoryUtilizationPercent.clamp(0, 100).toDouble();
+    final memoryPercent = frame.memoryUtilizationPercent
+        .clamp(0, 100)
+        .toDouble();
     final throughput = frame.estimatedThroughput;
     final capacity = frame.totalLinkCapacity;
     final averageTemp = frame.averageCpuTemperature;
@@ -258,9 +266,7 @@ class _Sidebar extends StatelessWidget {
       width: 300,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       decoration: const BoxDecoration(
-        border: Border(
-          right: BorderSide(color: Color(0xFF11141D)),
-        ),
+        border: Border(right: BorderSide(color: Color(0xFF11141D))),
         gradient: LinearGradient(
           colors: [Color(0xFF060910), Color(0xFF020307)],
           begin: Alignment.topCenter,
@@ -273,9 +279,9 @@ class _Sidebar extends StatelessWidget {
           children: [
             Text(
               '실시간 개요',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 24),
             Center(
@@ -285,7 +291,9 @@ class _Sidebar extends StatelessWidget {
                 maxValue: 100,
                 units: '%',
                 decimals: 1,
-                subtitle: averageTemp > 0 ? '평균 온도 ${averageTemp.toStringAsFixed(1)}℃' : null,
+                subtitle: averageTemp > 0
+                    ? '평균 온도 ${averageTemp.toStringAsFixed(1)}℃'
+                    : null,
               ),
             ),
             const SizedBox(height: 28),
@@ -305,11 +313,14 @@ class _Sidebar extends StatelessWidget {
             _MetricTile(
               label: '총 스루풋',
               value: '${throughput.toStringAsFixed(2)} Gbps',
-              caption: capacity > 0 ? '총 용량 ${capacity.toStringAsFixed(2)} Gbps' : null,
+              caption: capacity > 0
+                  ? '총 용량 ${capacity.toStringAsFixed(2)} Gbps'
+                  : null,
             ),
             _MetricTile(
               label: '링크 활용률',
-              value: '${(frame.linkUtilization * 100).clamp(0.0, 100.0).toStringAsFixed(1)}%',
+              value:
+                  '${(frame.linkUtilization * 100).clamp(0.0, 100.0).toStringAsFixed(1)}%',
             ),
             _MetricTile(
               label: '피크 온도',
@@ -319,9 +330,9 @@ class _Sidebar extends StatelessWidget {
             Text(
               '뷰 전환',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Colors.white70,
-                    letterSpacing: 0.2,
-                  ),
+                color: Colors.white70,
+                letterSpacing: 0.2,
+              ),
             ),
             const SizedBox(height: 12),
             _NavButton(
@@ -402,7 +413,11 @@ class _TwinViewport extends StatelessWidget {
                   TwinHost? nearest;
                   double minDistance = double.infinity;
                   for (final host in frame.hosts) {
-                    final point = twinProjectPoint(host.position, center, scale);
+                    final point = twinProjectPoint(
+                      host.position,
+                      center,
+                      scale,
+                    );
                     final radius = hostBubbleRadius(host);
                     final distance = (tap - point).distance;
                     if (distance <= radius + 14 && distance < minDistance) {
@@ -432,7 +447,7 @@ class _TwinViewport extends StatelessWidget {
   }
 }
 
-class _InsightPanel extends StatelessWidget {
+class _InsightPanel extends StatefulWidget {
   const _InsightPanel({
     required this.frame,
     required this.selectedHost,
@@ -444,63 +459,372 @@ class _InsightPanel extends StatelessWidget {
   final ValueChanged<String> onSelectHost;
 
   @override
+  State<_InsightPanel> createState() => _InsightPanelState();
+}
+
+class _InsightPanelState extends State<_InsightPanel> {
+  late final CommandService _commandService;
+  final TextEditingController _commandController = TextEditingController();
+  final TextEditingController _timeoutController = TextEditingController();
+  List<CommandJob> _jobs = const [];
+  Timer? _pollTimer;
+  bool _submitting = false;
+  String? _formError;
+  String? _targetHost;
+
+  @override
+  void initState() {
+    super.initState();
+    _commandService = CommandService();
+    _targetHost = widget.selectedHost?.hostname;
+    _refreshCommands();
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _refreshCommands(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _InsightPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedHost?.hostname != oldWidget.selectedHost?.hostname &&
+        widget.selectedHost != null) {
+      _targetHost ??= widget.selectedHost!.hostname;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    _commandService.dispose();
+    _commandController.dispose();
+    _timeoutController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshCommands() async {
+    try {
+      final jobs = await _commandService.listCommands();
+      if (!mounted) return;
+      setState(() {
+        _jobs = jobs..sort((a, b) => b.requestedAt.compareTo(a.requestedAt));
+      });
+    } catch (_) {
+      // ignore transient errors
+    }
+  }
+
+  Future<void> _submitCommand() async {
+    final host = _targetHost ?? widget.selectedHost?.hostname;
+    if (host == null || host.isEmpty) {
+      setState(() => _formError = '대상 호스트를 선택하세요.');
+      return;
+    }
+    final command = _commandController.text.trim();
+    if (command.isEmpty) {
+      setState(() => _formError = '실행할 명령을 입력하세요.');
+      return;
+    }
+    double? timeout;
+    final timeoutText = _timeoutController.text.trim();
+    if (timeoutText.isNotEmpty) {
+      timeout = double.tryParse(timeoutText);
+    }
+
+    setState(() {
+      _submitting = true;
+      _formError = null;
+    });
+    try {
+      await _commandService.createCommand(
+        hostname: host,
+        command: command,
+        timeoutSeconds: timeout,
+      );
+      _commandController.clear();
+      _timeoutController.clear();
+      await _refreshCommands();
+    } catch (error) {
+      setState(() => _formError = '명령 전송 실패: $error');
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  Color _statusColor(CommandStatus status) {
+    switch (status) {
+      case CommandStatus.pending:
+        return Colors.amberAccent;
+      case CommandStatus.running:
+        return Colors.blueAccent;
+      case CommandStatus.succeeded:
+        return Colors.tealAccent;
+      case CommandStatus.failed:
+        return Colors.redAccent;
+      case CommandStatus.timeout:
+        return Colors.deepOrangeAccent;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final frame = widget.frame;
     final hosts = frame.hosts;
-    final TwinHost? activeSelection = selectedHost ?? (hosts.isNotEmpty ? hosts.first : null);
+    final TwinHost? activeSelection =
+        widget.selectedHost ?? (hosts.isNotEmpty ? hosts.first : null);
+    final topHosts = frame.activeHosts.take(4).toList();
 
     return Container(
       width: 340,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       decoration: const BoxDecoration(
-        border: Border(
-          left: BorderSide(color: Color(0xFF11141D)),
-        ),
+        border: Border(left: BorderSide(color: Color(0xFF11141D))),
         gradient: LinearGradient(
           colors: [Color(0xFF080C14), Color(0xFF020408)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '네트워크 노드',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 18),
-          if (hosts.isEmpty)
-            const Expanded(
-              child: _ActivityTile(
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '네트워크 노드',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 18),
+            if (hosts.isEmpty)
+              const _ActivityTile(
                 timestamp: '대기 중',
                 summary: '텔레메트리 수신 대기중입니다. REFLECTOR 노드가 온라인인지 확인하세요.',
-              ),
-            )
-          else ...[
-            Expanded(
-              child: ListView.separated(
-                itemCount: hosts.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final host = hosts[index];
-                  final bool isSelected = activeSelection?.hostname == host.hostname;
-                  return InkWell(
+              )
+            else
+              ...hosts.map(
+                (host) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () => onSelectHost(host.hostname),
-                    child: _HostListTile(host: host, isSelected: isSelected),
-                  );
-                },
+                    onTap: () => widget.onSelectHost(host.hostname),
+                    child: _HostListTile(
+                      host: host,
+                      isSelected: activeSelection?.hostname == host.hostname,
+                    ),
+                  ),
+                ),
               ),
+            const SizedBox(height: 12),
+            if (activeSelection != null) _HostDetailCard(host: activeSelection),
+            const SizedBox(height: 24),
+            Text(
+              '원격 명령',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 20),
-            if (activeSelection != null)
-              _HostDetailCard(host: activeSelection),
+            const SizedBox(height: 12),
+            _buildCommandForm(activeSelection),
+            const SizedBox(height: 18),
+            _buildCommandList(),
+            const SizedBox(height: 28),
+            Text(
+              '상위 리소스 소비 호스트',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
+            if (topHosts.isEmpty)
+              const _ActivityTile(
+                timestamp: '대기 중',
+                summary: '텔레메트리를 수신하면 여기에 최신 이벤트가 표시됩니다.',
+              )
+            else
+              ...topHosts.map(
+                (host) => _ActivityTile(
+                  timestamp: host.lastSeen.toLocal().toIso8601String(),
+                  summary: _hostSummary(host),
+                ),
+              ),
           ],
-        ],
+        ),
       ),
     );
+  }
+
+  Widget _buildCommandForm(TwinHost? selectedHost) {
+    final hostItems = widget.frame.hosts
+        .where((host) => !host.isCore)
+        .map(
+          (host) => DropdownMenuItem<String>(
+            value: host.hostname,
+            child: Text(host.displayName),
+          ),
+        )
+        .toList();
+
+    final currentValue =
+        _targetHost ??
+        selectedHost?.hostname ??
+        (hostItems.isNotEmpty ? hostItems.first.value : null);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InputDecorator(
+          decoration: const InputDecoration(
+            labelText: '대상 호스트',
+            border: OutlineInputBorder(),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: currentValue,
+              isExpanded: true,
+              items: hostItems,
+              hint: const Text('호스트 선택'),
+              onChanged: (value) => setState(() => _targetHost = value),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _commandController,
+          decoration: const InputDecoration(
+            labelText: '명령어',
+            hintText: '예) ipconfig /all',
+            border: OutlineInputBorder(),
+          ),
+          minLines: 1,
+          maxLines: 2,
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _timeoutController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: '타임아웃 (초, 선택)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            ElevatedButton.icon(
+              onPressed: _submitting ? null : _submitCommand,
+              icon: _submitting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send),
+              label: const Text('실행'),
+            ),
+            if (_formError != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: Text(
+                  _formError!,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCommandList() {
+    if (_jobs.isEmpty) {
+      return const Text(
+        '전송된 명령이 없습니다.',
+        style: TextStyle(color: Colors.white54, fontSize: 13),
+      );
+    }
+
+    final recentJobs = _jobs.take(8).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: recentJobs.map((job) {
+        final color = _statusColor(job.status);
+        final duration = job.duration;
+        String subtitle = '${job.hostname} · ${job.requestedLabel}';
+        if (duration != null) {
+          subtitle += ' · ${duration.inSeconds}s';
+        }
+        if (job.exitCode != null) {
+          subtitle += ' · exit ${job.exitCode}';
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF1A1F2B)),
+            color: const Color(0xFF0D131E),
+          ),
+          child: ExpansionTile(
+            title: Text(
+              job.command,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            subtitle: Text(
+              subtitle,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            trailing: Chip(
+              backgroundColor: color.withValues(alpha: 0.15),
+              side: BorderSide.none,
+              label: Text(
+                job.statusLabel,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+            children: [
+              if (job.stdout != null && job.stdout!.isNotEmpty)
+                _CommandOutputBlock(label: 'STDOUT', body: job.stdout!),
+              if (job.stderr != null && job.stderr!.isNotEmpty)
+                _CommandOutputBlock(label: 'STDERR', body: job.stderr!),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  String _hostSummary(TwinHost host) {
+    final cpu = host.metrics.cpuLoad.toStringAsFixed(1);
+    final memory = host.metrics.memoryUsedPercent.toStringAsFixed(1);
+    final throughput = host.metrics.netThroughputGbps;
+    final capacity = host.metrics.netCapacityGbps;
+
+    final segments = <String>[
+      '${host.displayName} (${host.ip})',
+      'CPU $cpu%',
+      'RAM $memory%',
+    ];
+
+    if (throughput != null && throughput > 0) {
+      final head = throughput.toStringAsFixed(2);
+      String netText = 'NET $head Gbps';
+      if (capacity != null && capacity > 0) {
+        netText = 'NET $head / ${capacity.toStringAsFixed(2)} Gbps';
+      }
+      segments.add(netText);
+    }
+
+    return segments.join(' — ');
   }
 }
 
@@ -525,9 +849,9 @@ class _MetricTile extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
           if (caption != null)
             Padding(
@@ -570,7 +894,8 @@ class _AnalogGauge extends StatefulWidget {
   State<_AnalogGauge> createState() => _AnalogGaugeState();
 }
 
-class _AnalogGaugeState extends State<_AnalogGauge> with SingleTickerProviderStateMixin {
+class _AnalogGaugeState extends State<_AnalogGauge>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
   @override
@@ -635,7 +960,9 @@ class _AnalogGaugeState extends State<_AnalogGauge> with SingleTickerProviderSta
             animation: _controller,
             builder: (context, _) {
               final normalized = _controller.value;
-              final color = Color.lerp(widget.startColor, widget.endColor, normalized) ?? widget.startColor;
+              final color =
+                  Color.lerp(widget.startColor, widget.endColor, normalized) ??
+                  widget.startColor;
               return CustomPaint(
                 painter: _GaugePainter(normalized: normalized, color: color),
               );
@@ -690,7 +1017,13 @@ class _GaugePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawArc(arcRect, startAngle, sweepAngle * normalized, false, progressPaint);
+    canvas.drawArc(
+      arcRect,
+      startAngle,
+      sweepAngle * normalized,
+      false,
+      progressPaint,
+    );
 
     final pointerPaint = Paint()
       ..color = color
@@ -729,26 +1062,29 @@ class _NavButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool enabled = isEnabled && onPressed != null;
-    final Color baseColor = isActive ? Colors.tealAccent : const Color(0xFF1A1F2B);
+    final Color baseColor = isActive
+        ? Colors.tealAccent
+        : const Color(0xFF1A1F2B);
     final Color textColor = isActive
         ? Colors.white
         : enabled
-            ? Colors.white70
-            : Colors.white24;
+        ? Colors.white70
+        : Colors.white24;
 
     return OutlinedButton(
       style: OutlinedButton.styleFrom(
         foregroundColor: textColor,
-        side: BorderSide(color: baseColor.withValues(alpha: isActive ? 1 : 0.6)),
-        backgroundColor: isActive ? const Color(0xFF124559) : const Color(0xFF0A101A),
+        side: BorderSide(
+          color: baseColor.withValues(alpha: isActive ? 1 : 0.6),
+        ),
+        backgroundColor: isActive
+            ? const Color(0xFF124559)
+            : const Color(0xFF0A101A),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       onPressed: enabled ? onPressed : null,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(label),
-      ),
+      child: Align(alignment: Alignment.centerLeft, child: Text(label)),
     );
   }
 }
@@ -862,7 +1198,9 @@ class _HostListTile extends StatelessWidget {
         color: isSelected ? const Color(0xFF112032) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-        color: isSelected ? Colors.tealAccent.withValues(alpha: 0.5) : const Color(0xFF1A1F2B),
+          color: isSelected
+              ? Colors.tealAccent.withValues(alpha: 0.5)
+              : const Color(0xFF1A1F2B),
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -871,7 +1209,10 @@ class _HostListTile extends StatelessWidget {
           Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: statusColor,
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -949,7 +1290,9 @@ class _HostDetailCard extends StatelessWidget {
         children: [
           Text(
             '${host.displayName} 상세',
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 12),
           _DetailRow(label: '상태', value: host.status.name.toUpperCase()),
@@ -959,11 +1302,15 @@ class _HostDetailCard extends StatelessWidget {
           _DetailRow(label: 'CPU', value: host.cpuSummary),
           _DetailRow(
             label: 'CPU 온도',
-            value: host.cpuTemperature != null ? '${host.cpuTemperature!.toStringAsFixed(1)}℃' : 'N/A',
+            value: host.cpuTemperature != null
+                ? '${host.cpuTemperature!.toStringAsFixed(1)}℃'
+                : 'N/A',
           ),
           _DetailRow(
             label: 'GPU 온도',
-            value: host.gpuTemperature != null ? '${host.gpuTemperature!.toStringAsFixed(1)}℃' : 'N/A',
+            value: host.gpuTemperature != null
+                ? '${host.gpuTemperature!.toStringAsFixed(1)}℃'
+                : 'N/A',
           ),
           _DetailRow(label: '메모리', value: memoryLine),
           if (throughput != null)
@@ -1019,6 +1366,50 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
+class _CommandOutputBlock extends StatelessWidget {
+  const _CommandOutputBlock({required this.label, required this.body});
+
+  final String label;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A131F),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF1F2A3A)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body.trim().isEmpty ? '(출력 없음)' : body.trim(),
+            style: const TextStyle(
+              color: Colors.white60,
+              fontFamily: 'monospace',
+              fontSize: 11,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TwinScenePainter extends CustomPainter {
   _TwinScenePainter(
     this.frame, {
@@ -1053,11 +1444,21 @@ class _TwinScenePainter extends CustomPainter {
     }
 
     final haloPaint = Paint()
-      ..shader = const RadialGradient(
-        colors: [Color(0xFF0B2234), Colors.transparent],
-        radius: 0.8,
-      ).createShader(Rect.fromCircle(center: size.center(Offset.zero), radius: size.shortestSide * 0.55));
-    canvas.drawCircle(size.center(Offset.zero), size.shortestSide * 0.55, haloPaint);
+      ..shader =
+          const RadialGradient(
+            colors: [Color(0xFF0B2234), Colors.transparent],
+            radius: 0.8,
+          ).createShader(
+            Rect.fromCircle(
+              center: size.center(Offset.zero),
+              radius: size.shortestSide * 0.55,
+            ),
+          );
+    canvas.drawCircle(
+      size.center(Offset.zero),
+      size.shortestSide * 0.55,
+      haloPaint,
+    );
   }
 
   void _paintLinks(Canvas canvas, Size size) {
@@ -1109,9 +1510,18 @@ class _TwinScenePainter extends CustomPainter {
 
       Color color;
       if (mode == TwinViewportMode.heatmap) {
-        final heatValue = host.cpuTemperature ?? host.gpuTemperature ?? host.metrics.cpuLoad;
-        final normalized = heatMax > 0 ? (heatValue / heatMax).clamp(0.0, 1.0) : 0.0;
-        color = Color.lerp(const Color(0xFF38BDF8), Colors.deepOrangeAccent, normalized) ?? Colors.tealAccent;
+        final heatValue =
+            host.cpuTemperature ?? host.gpuTemperature ?? host.metrics.cpuLoad;
+        final normalized = heatMax > 0
+            ? (heatValue / heatMax).clamp(0.0, 1.0)
+            : 0.0;
+        color =
+            Color.lerp(
+              const Color(0xFF38BDF8),
+              Colors.deepOrangeAccent,
+              normalized,
+            ) ??
+            Colors.tealAccent;
         if (status == TwinHostStatus.offline) {
           color = Colors.grey.shade700;
         }
