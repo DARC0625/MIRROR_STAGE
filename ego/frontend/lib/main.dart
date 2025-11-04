@@ -466,30 +466,55 @@ class _InsightPanelState extends State<_InsightPanel> {
   late final CommandService _commandService;
   final TextEditingController _commandController = TextEditingController();
   final TextEditingController _timeoutController = TextEditingController();
-  List<CommandJob> _jobs = const [];
+  final TextEditingController _searchController = TextEditingController();
+  final List<CommandJob> _jobs = [];
   Timer? _pollTimer;
   bool _submitting = false;
+  bool _loadingCommands = false;
+  bool _hasMore = false;
   String? _formError;
   String? _targetHost;
+  String? _filterHostname;
+  CommandStatus? _filterStatus;
+  final _MetricHistoryBuffer _history = _MetricHistoryBuffer();
+  String? _historyHost;
+  DateTime? _lastSampleTimestamp;
+  int _currentPage = 1;
+  static const int _pageSize = 20;
 
   @override
   void initState() {
     super.initState();
     _commandService = CommandService();
     _targetHost = widget.selectedHost?.hostname;
-    _refreshCommands();
+    _filterHostname = widget.selectedHost?.hostname;
+    _captureMetricSample(widget.frame, widget.selectedHost);
+    _refreshCommands(reset: true);
     _pollTimer = Timer.periodic(
       const Duration(seconds: 3),
-      (_) => _refreshCommands(),
+      (_) => _refreshCommands(reset: true),
     );
   }
 
   @override
   void didUpdateWidget(covariant _InsightPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.selectedHost?.hostname != oldWidget.selectedHost?.hostname &&
-        widget.selectedHost != null) {
+    final hostChanged =
+        widget.selectedHost?.hostname != oldWidget.selectedHost?.hostname;
+    if (hostChanged && widget.selectedHost != null) {
       _targetHost ??= widget.selectedHost!.hostname;
+      if (_filterHostname == null) {
+        _filterHostname = widget.selectedHost!.hostname;
+        _applyFilters();
+      }
+      _history.clear();
+      _historyHost = null;
+      _lastSampleTimestamp = null;
+    }
+
+    if (hostChanged ||
+        widget.frame.generatedAt != oldWidget.frame.generatedAt) {
+      _captureMetricSample(widget.frame, widget.selectedHost);
     }
   }
 
@@ -499,19 +524,107 @@ class _InsightPanelState extends State<_InsightPanel> {
     _commandService.dispose();
     _commandController.dispose();
     _timeoutController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _refreshCommands() async {
+  Future<void> _refreshCommands({bool reset = false, int? page}) async {
+    final nextPage = page ?? (reset ? 1 : _currentPage);
+    setState(() => _loadingCommands = true);
     try {
-      final jobs = await _commandService.listCommands();
+      final result = await _commandService.listCommands(
+        hostname: _filterHostname,
+        status: _filterStatus,
+        search: _searchController.text.trim().isEmpty
+            ? null
+            : _searchController.text.trim(),
+        page: nextPage,
+        pageSize: _pageSize,
+      );
       if (!mounted) return;
       setState(() {
-        _jobs = jobs..sort((a, b) => b.requestedAt.compareTo(a.requestedAt));
+        _currentPage = result.page;
+        if (reset || result.page == 1) {
+          _jobs
+            ..clear()
+            ..addAll(result.items);
+        } else {
+          _jobs.addAll(result.items);
+        }
+        _hasMore = result.hasMore;
       });
     } catch (_) {
-      // ignore transient errors
+      // ignore transient errors for now
+    } finally {
+      if (mounted) {
+        setState(() => _loadingCommands = false);
+      }
     }
+  }
+
+  void _captureMetricSample(TwinStateFrame frame, TwinHost? preferredHost) {
+    final host = _resolveHistoryHost(frame, preferredHost);
+    if (host == null) {
+      return;
+    }
+
+    final timestamp = frame.generatedAt;
+    if (_lastSampleTimestamp != null &&
+        timestamp.isAtSameMomentAs(_lastSampleTimestamp!)) {
+      return;
+    }
+
+    if (_historyHost != host.hostname) {
+      _history.clear();
+      _historyHost = host.hostname;
+    }
+
+    _lastSampleTimestamp = timestamp;
+    final previous = _history.latest;
+    final throughput = host.metrics.netThroughputGbps ?? previous?.throughput;
+    final temperature =
+        host.cpuTemperature ?? host.gpuTemperature ?? previous?.temperature;
+
+    _history.add(
+      _MetricSample(
+        timestamp: timestamp,
+        cpu: host.metrics.cpuLoad,
+        memory: host.metrics.memoryUsedPercent,
+        throughput: throughput,
+        temperature: temperature,
+      ),
+    );
+  }
+
+  TwinHost? _resolveHistoryHost(TwinStateFrame frame, TwinHost? preferred) {
+    if (preferred != null) {
+      return preferred;
+    }
+    for (final host in frame.hosts) {
+      if (!host.isCore) {
+        return host;
+      }
+    }
+    return frame.hosts.isNotEmpty ? frame.hosts.first : null;
+  }
+
+  Future<void> _applyFilters() async {
+    await _refreshCommands(reset: true, page: 1);
+  }
+
+  Future<void> _loadMore() async {
+    if (_hasMore && !_loadingCommands) {
+      await _refreshCommands(page: _currentPage + 1);
+    }
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _filterHostname = null;
+      _filterStatus = null;
+      _searchController.clear();
+    });
+    _applyFilters();
   }
 
   Future<void> _submitCommand() async {
@@ -543,7 +656,7 @@ class _InsightPanelState extends State<_InsightPanel> {
       );
       _commandController.clear();
       _timeoutController.clear();
-      await _refreshCommands();
+      await _refreshCommands(reset: true);
     } catch (error) {
       setState(() => _formError = '명령 전송 실패: $error');
     } finally {
@@ -619,6 +732,11 @@ class _InsightPanelState extends State<_InsightPanel> {
               ),
             const SizedBox(height: 12),
             if (activeSelection != null) _HostDetailCard(host: activeSelection),
+            if (activeSelection != null)
+              _RealtimeTelemetryCard(
+                host: activeSelection,
+                samples: _history.samples,
+              ),
             const SizedBox(height: 24),
             Text(
               '원격 명령',
@@ -628,8 +746,19 @@ class _InsightPanelState extends State<_InsightPanel> {
             ),
             const SizedBox(height: 12),
             _buildCommandForm(activeSelection),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
+            _buildCommandFilters(hosts),
+            const SizedBox(height: 12),
             _buildCommandList(),
+            if (_hasMore)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _loadMore,
+                  icon: const Icon(Icons.expand_more),
+                  label: const Text('더 불러오기'),
+                ),
+              ),
             const SizedBox(height: 28),
             Text(
               '상위 리소스 소비 호스트',
@@ -738,68 +867,185 @@ class _InsightPanelState extends State<_InsightPanel> {
     );
   }
 
-  Widget _buildCommandList() {
-    if (_jobs.isEmpty) {
-      return const Text(
-        '전송된 명령이 없습니다.',
-        style: TextStyle(color: Colors.white54, fontSize: 13),
-      );
-    }
+  Widget _buildCommandFilters(List<TwinHost> hosts) {
+    final hostOptions = <DropdownMenuItem<String?>>[
+      const DropdownMenuItem<String?>(value: null, child: Text('전체 호스트')),
+      ...hosts
+          .where((host) => !host.isCore)
+          .map(
+            (host) => DropdownMenuItem<String?>(
+              value: host.hostname,
+              child: Text(host.displayName),
+            ),
+          ),
+    ];
 
-    final recentJobs = _jobs.take(8).toList();
+    final statusOptions = <DropdownMenuItem<CommandStatus?>>[
+      const DropdownMenuItem<CommandStatus?>(value: null, child: Text('전체 상태')),
+      ...CommandStatus.values.map(
+        (status) => DropdownMenuItem<CommandStatus?>(
+          value: status,
+          child: Text(_statusLabel(status)),
+        ),
+      ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: recentJobs.map((job) {
-        final color = _statusColor(job.status);
-        final duration = job.duration;
-        String subtitle = '${job.hostname} · ${job.requestedLabel}';
-        if (duration != null) {
-          subtitle += ' · ${duration.inSeconds}s';
-        }
-        if (job.exitCode != null) {
-          subtitle += ' · exit ${job.exitCode}';
-        }
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF1A1F2B)),
-            color: const Color(0xFF0D131E),
-          ),
-          child: ExpansionTile(
-            title: Text(
-              job.command,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            subtitle: Text(
-              subtitle,
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            trailing: Chip(
-              backgroundColor: color.withValues(alpha: 0.15),
-              side: BorderSide.none,
-              label: Text(
-                job.statusLabel,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: '호스트 필터',
+                  border: OutlineInputBorder(),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String?>(
+                    value: _filterHostname,
+                    isExpanded: true,
+                    items: hostOptions,
+                    onChanged: (value) {
+                      setState(() => _filterHostname = value);
+                      _applyFilters();
+                    },
+                  ),
                 ),
               ),
             ),
-            children: [
-              if (job.stdout != null && job.stdout!.isNotEmpty)
-                _CommandOutputBlock(label: 'STDOUT', body: job.stdout!),
-              if (job.stderr != null && job.stderr!.isNotEmpty)
-                _CommandOutputBlock(label: 'STDERR', body: job.stderr!),
-            ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: '상태',
+                  border: OutlineInputBorder(),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<CommandStatus?>(
+                    value: _filterStatus,
+                    isExpanded: true,
+                    items: statusOptions,
+                    onChanged: (value) {
+                      setState(() => _filterStatus = value);
+                      _applyFilters();
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _searchController,
+          decoration: InputDecoration(
+            labelText: '명령 검색',
+            border: const OutlineInputBorder(),
+            suffixIcon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  onPressed: _applyFilters,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    _applyFilters();
+                  },
+                ),
+              ],
+            ),
           ),
-        );
-      }).toList(),
+          onSubmitted: (_) => _applyFilters(),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: _clearFilters,
+            child: const Text('필터 초기화'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCommandList() {
+    final children = <Widget>[];
+
+    if (_loadingCommands) {
+      children.add(const LinearProgressIndicator());
+      children.add(const SizedBox(height: 8));
+    }
+
+    if (_jobs.isEmpty) {
+      children.add(
+        const Text(
+          '전송된 명령이 없습니다.',
+          style: TextStyle(color: Colors.white54, fontSize: 13),
+        ),
+      );
+    } else {
+      children.addAll(
+        _jobs.map((job) {
+          final color = _statusColor(job.status);
+          final duration = job.duration;
+          String subtitle = '${job.hostname} · ${job.requestedLabel}';
+          if (duration != null) {
+            subtitle += ' · ${duration.inSeconds}s';
+          }
+          if (job.exitCode != null) {
+            subtitle += ' · exit ${job.exitCode}';
+          }
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF1A1F2B)),
+              color: const Color(0xFF0D131E),
+            ),
+            child: ExpansionTile(
+              title: Text(
+                job.command,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                subtitle,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              trailing: Chip(
+                backgroundColor: color.withValues(alpha: 0.15),
+                side: BorderSide.none,
+                label: Text(
+                  job.statusLabel,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              children: [
+                if (job.stdout != null && job.stdout!.isNotEmpty)
+                  _CommandOutputBlock(label: 'STDOUT', body: job.stdout!),
+                if (job.stderr != null && job.stderr!.isNotEmpty)
+                  _CommandOutputBlock(label: 'STDERR', body: job.stderr!),
+              ],
+            ),
+          );
+        }),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
     );
   }
 
@@ -825,6 +1071,21 @@ class _InsightPanelState extends State<_InsightPanel> {
     }
 
     return segments.join(' — ');
+  }
+
+  String _statusLabel(CommandStatus status) {
+    switch (status) {
+      case CommandStatus.pending:
+        return '대기 중';
+      case CommandStatus.running:
+        return '실행 중';
+      case CommandStatus.succeeded:
+        return '성공';
+      case CommandStatus.failed:
+        return '실패';
+      case CommandStatus.timeout:
+        return '시간 초과';
+    }
   }
 }
 
@@ -1276,6 +1537,20 @@ class _HostDetailCard extends StatelessWidget {
       host.hardware.systemManufacturer,
       host.hardware.systemModel,
     ]);
+    final infoChips = <Widget>[
+      if (host.osDisplay.isNotEmpty)
+        _InfoPill(icon: Icons.devices_other_outlined, label: host.osDisplay),
+      if (host.platform.isNotEmpty && host.platform != host.osDisplay)
+        _InfoPill(
+          icon: Icons.memory_outlined,
+          label: host.platform.toUpperCase(),
+        ),
+      if (host.agentVersion.isNotEmpty)
+        _InfoPill(
+          icon: Icons.verified_outlined,
+          label: 'Agent ${host.agentVersion}',
+        ),
+    ];
 
     return Container(
       width: double.infinity,
@@ -1294,6 +1569,11 @@ class _HostDetailCard extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
+          if (infoChips.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              child: Wrap(spacing: 8, runSpacing: 8, children: infoChips),
+            ),
           const SizedBox(height: 12),
           _DetailRow(label: '상태', value: host.status.name.toUpperCase()),
           _DetailRow(label: 'IP', value: host.ip),
@@ -1364,6 +1644,428 @@ class _DetailRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _InfoPill extends StatelessWidget {
+  const _InfoPill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111A29),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFF1F2B3D)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white54),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RealtimeTelemetryCard extends StatelessWidget {
+  const _RealtimeTelemetryCard({required this.host, required this.samples});
+
+  final TwinHost host;
+  final List<_MetricSample> samples;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final latest = samples.isNotEmpty ? samples.last : null;
+    final throughput =
+        host.metrics.netThroughputGbps ?? latest?.throughput ?? 0;
+    final capacity = host.metrics.netCapacityGbps;
+    final temperature =
+        host.cpuTemperature ?? host.gpuTemperature ?? latest?.temperature;
+    final uptimeText = _formatDuration(host.uptime);
+    final memorySubtitle =
+        host.memoryUsedBytes != null && host.memoryTotalBytes != null
+        ? '${_formatBytes(host.memoryUsedBytes)} / ${_formatBytes(host.memoryTotalBytes)}'
+        : '${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF050B15),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF1B2333)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '실시간 텔레메트리',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _AnalogGauge(
+                  label: 'CPU',
+                  value: host.metrics.cpuLoad.clamp(0, 100).toDouble(),
+                  maxValue: 100,
+                  units: '%',
+                  decimals: 1,
+                  subtitle: '업타임 $uptimeText',
+                  startColor: Colors.lightBlueAccent,
+                  endColor: Colors.deepOrangeAccent,
+                  size: 140,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _AnalogGauge(
+                  label: '메모리',
+                  value: host.metrics.memoryUsedPercent
+                      .clamp(0, 100)
+                      .toDouble(),
+                  maxValue: 100,
+                  units: '%',
+                  decimals: 1,
+                  subtitle: memorySubtitle,
+                  startColor: const Color(0xFF7C3AED),
+                  endColor: Colors.pinkAccent,
+                  size: 140,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _MetricProgressRow(
+            icon: Icons.device_thermostat,
+            label: '온도',
+            value: temperature != null
+                ? '${temperature.toStringAsFixed(1)}℃'
+                : 'N/A',
+            progress: temperature != null
+                ? (temperature / 110).clamp(0.0, 1.0)
+                : null,
+            caption: temperature != null ? '센서 실측' : '센서 데이터 없음',
+          ),
+          const SizedBox(height: 12),
+          _MetricProgressRow(
+            icon: Icons.network_check,
+            label: '네트워크',
+            value: throughput > 0
+                ? '${throughput.toStringAsFixed(2)} Gbps'
+                : 'N/A',
+            progress: capacity != null && capacity > 0
+                ? (throughput / capacity).clamp(0.0, 1.0)
+                : null,
+            caption: capacity != null
+                ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
+                : '용량 정보 없음',
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _SparklineChart(
+                  label: 'CPU 히스토리',
+                  unit: '%',
+                  color: Colors.tealAccent,
+                  samples: samples,
+                  selector: (sample) => sample.cpu,
+                  precision: 1,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SparklineChart(
+                  label: '스루풋',
+                  unit: 'Gbps',
+                  color: Colors.deepOrangeAccent,
+                  samples: samples,
+                  selector: (sample) => sample.throughput,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricProgressRow extends StatelessWidget {
+  const _MetricProgressRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.progress,
+    this.caption,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final double? progress;
+  final String? caption;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: Colors.white54),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const Spacer(),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        if (progress != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress!.clamp(0.0, 1.0),
+                minHeight: 6,
+                backgroundColor: const Color(0xFF101826),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Colors.tealAccent.withValues(alpha: 0.75),
+                ),
+              ),
+            ),
+          ),
+        if (caption != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              caption!,
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SparklineChart extends StatelessWidget {
+  const _SparklineChart({
+    required this.label,
+    required this.unit,
+    required this.color,
+    required this.samples,
+    required this.selector,
+    this.precision = 2,
+  });
+
+  final String label;
+  final String unit;
+  final Color color;
+  final List<_MetricSample> samples;
+  final double? Function(_MetricSample sample) selector;
+  final int precision;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = samples.isNotEmpty ? selector(samples.last) : null;
+    final valueText = current != null && current.isFinite
+        ? '${current.toStringAsFixed(precision)} $unit'
+        : 'N/A';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF080F1C),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF111B2B)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            valueText,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 60,
+            child: CustomPaint(
+              painter: _SparklinePainter(
+                samples: samples,
+                selector: selector,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SparklinePainter extends CustomPainter {
+  const _SparklinePainter({
+    required this.samples,
+    required this.selector,
+    required this.color,
+  });
+
+  final List<_MetricSample> samples;
+  final double? Function(_MetricSample sample) selector;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (samples.isEmpty) {
+      _drawBaseline(canvas, size);
+      return;
+    }
+
+    final values = <double>[];
+    for (final sample in samples) {
+      final value = selector(sample);
+      if (value != null && value.isFinite) {
+        values.add(value);
+      }
+    }
+    if (values.isEmpty) {
+      _drawBaseline(canvas, size);
+      return;
+    }
+
+    final minValue = values.reduce(math.min);
+    final maxValue = values.reduce(math.max);
+    final range = (maxValue - minValue).abs() < 0.001
+        ? (maxValue == 0 ? 1 : maxValue.abs())
+        : (maxValue - minValue);
+
+    final points = <Offset>[];
+    final total = samples.length;
+    for (var i = 0; i < total; i++) {
+      final value = selector(samples[i]);
+      if (value == null || !value.isFinite) continue;
+      final normalized = ((value - minValue) / range).clamp(0.0, 1.0);
+      final x = total == 1 ? 0.0 : (i / (total - 1)) * size.width;
+      final y = size.height - (normalized * size.height);
+      points.add(Offset(x, y));
+    }
+
+    if (points.length < 2) {
+      _drawBaseline(canvas, size);
+      return;
+    }
+
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (var i = 1; i < points.length; i++) {
+      path.lineTo(points[i].dx, points[i].dy);
+    }
+
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..isAntiAlias = true;
+    canvas.drawPath(path, stroke);
+
+    final fillPath = Path.from(path)
+      ..lineTo(points.last.dx, size.height)
+      ..lineTo(points.first.dx, size.height)
+      ..close();
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        colors: [color.withValues(alpha: 0.35), Colors.transparent],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawPath(fillPath, fillPaint);
+  }
+
+  void _drawBaseline(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.2)
+      ..strokeWidth = 1.5;
+    canvas.drawLine(
+      Offset(0, size.height - 2),
+      Offset(size.width, size.height - 2),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SparklinePainter oldDelegate) => true;
+}
+
+class _MetricHistoryBuffer {
+  _MetricHistoryBuffer();
+
+  static const int _capacity = 240;
+  final List<_MetricSample> _samples = [];
+
+  List<_MetricSample> get samples => List.unmodifiable(_samples);
+  _MetricSample? get latest => _samples.isNotEmpty ? _samples.last : null;
+
+  void add(_MetricSample sample) {
+    _samples.add(sample);
+    if (_samples.length > _capacity) {
+      _samples.removeRange(0, _samples.length - _capacity);
+    }
+  }
+
+  void clear() => _samples.clear();
+}
+
+class _MetricSample {
+  const _MetricSample({
+    required this.timestamp,
+    required this.cpu,
+    required this.memory,
+    this.throughput,
+    this.temperature,
+  });
+
+  final DateTime timestamp;
+  final double cpu;
+  final double memory;
+  final double? throughput;
+  final double? temperature;
 }
 
 class _CommandOutputBlock extends StatelessWidget {

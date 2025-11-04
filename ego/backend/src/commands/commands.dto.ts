@@ -1,6 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+export const CommandStatusSchema = z.enum(['pending', 'running', 'succeeded', 'failed', 'timeout']);
+
 export const CreateCommandSchema = z.object({
   hostname: z.string().min(1),
   command: z.string().min(1),
@@ -19,3 +21,13 @@ export const CommandResultSchema = z.object({
 });
 
 export class CommandResultDto extends createZodDto(CommandResultSchema) {}
+
+export const ListCommandsQuerySchema = z.object({
+  hostname: z.string().min(1).optional(),
+  status: CommandStatusSchema.optional(),
+  search: z.string().min(1).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export class ListCommandsQueryDto extends createZodDto(ListCommandsQuerySchema) {}

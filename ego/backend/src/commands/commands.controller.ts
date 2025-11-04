@@ -1,7 +1,14 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { CommandsService } from './commands.service';
-import { CreateCommandDto, CreateCommandSchema, CommandResultDto, CommandResultSchema } from './commands.dto';
+import {
+  CreateCommandDto,
+  CreateCommandSchema,
+  CommandResultDto,
+  CommandResultSchema,
+  ListCommandsQueryDto,
+  ListCommandsQuerySchema,
+} from './commands.dto';
 
 @Controller('commands')
 export class CommandsController {
@@ -26,7 +33,7 @@ export class CommandsController {
   }
 
   @Get()
-  list() {
-    return this.commandsService.listCommands();
+  list(@Query(new ZodValidationPipe(ListCommandsQuerySchema)) query: ListCommandsQueryDto) {
+    return this.commandsService.paginateCommands(query);
   }
 }

@@ -17,24 +17,33 @@ class CommandService {
   final http.Client _client;
   final String _apiBase;
 
-  Uri _buildUri([String path = '']) {
-    final normalized = path.startsWith('/') ? path.substring(1) : path;
-    final suffix = normalized.isEmpty ? '' : '/$normalized';
-    return Uri.parse('$_apiBase/commands$suffix');
-  }
+  Uri _baseUri() => Uri.parse('$_apiBase/commands');
 
-  Future<List<CommandJob>> listCommands() async {
-    final response = await _client.get(_buildUri());
+  Future<CommandPage> listCommands({
+    String? hostname,
+    CommandStatus? status,
+    String? search,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    final params = <String, String>{'page': '$page', 'pageSize': '$pageSize'};
+    if (hostname != null && hostname.isNotEmpty) {
+      params['hostname'] = hostname;
+    }
+    if (status != null) {
+      params['status'] = status.name;
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      params['search'] = search.trim();
+    }
+
+    final uri = _baseUri().replace(queryParameters: params);
+    final response = await _client.get(uri);
     if (response.statusCode >= 400) {
       throw Exception('명령 목록을 가져오지 못했습니다 (${response.statusCode})');
     }
-    final payload = jsonDecode(response.body);
-    if (payload is List) {
-      return payload
-          .map((entry) => CommandJob.fromJson(entry as Map<String, dynamic>))
-          .toList();
-    }
-    return const [];
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return CommandPage.fromJson(payload);
   }
 
   Future<CommandJob> createCommand({
@@ -48,7 +57,7 @@ class CommandService {
       if (timeoutSeconds != null) 'timeoutSeconds': timeoutSeconds,
     };
     final response = await _client.post(
-      _buildUri(),
+      _baseUri(),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );

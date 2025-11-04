@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Subject } from 'rxjs';
 import { CommandEntity, CommandStatus } from './command.entity';
-import { CreateCommandDto, CommandResultDto } from './commands.dto';
+import { CreateCommandDto, CommandResultDto, ListCommandsQueryDto } from './commands.dto';
 
 export interface PendingCommandPayload {
   id: string;
@@ -84,12 +84,30 @@ export class CommandsService {
     return command;
   }
 
-  async listCommands(hostname?: string, limit = 50): Promise<CommandEntity[]> {
-    return this.commandsRepository.find({
-      where: hostname ? { hostname } : {},
-      order: { requestedAt: 'DESC' },
-      take: limit,
-    });
+  async paginateCommands(query: ListCommandsQueryDto) {
+    const qb = this.commandsRepository.createQueryBuilder('command').orderBy('command.requestedAt', 'DESC');
+
+    if (query.hostname) {
+      qb.andWhere('command.hostname = :hostname', { hostname: query.hostname });
+    }
+    if (query.status) {
+      qb.andWhere('command.status = :status', { status: query.status });
+    }
+    if (query.search) {
+      qb.andWhere('LOWER(command.command) LIKE :search', { search: `%${query.search.toLowerCase()}%` });
+    }
+
+    const total = await qb.getCount();
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const items = await qb.skip((page - 1) * pageSize).take(pageSize).getMany();
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+    };
   }
 
   private publishUpdate(command: CommandEntity): void {

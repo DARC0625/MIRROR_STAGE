@@ -75,3 +75,31 @@ class CommandJob {
     return completedAt!.difference(startedAt!);
   }
 }
+
+class CommandPage {
+  const CommandPage({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.pageSize,
+  });
+
+  final List<CommandJob> items;
+  final int total;
+  final int page;
+  final int pageSize;
+
+  bool get hasMore => page * pageSize < total;
+
+  factory CommandPage.fromJson(Map<String, dynamic> json) {
+    final itemsRaw = json['items'] as List<dynamic>? ?? const [];
+    return CommandPage(
+      items: itemsRaw
+          .map((entry) => CommandJob.fromJson(entry as Map<String, dynamic>))
+          .toList(),
+      total: (json['total'] as num?)?.toInt() ?? itemsRaw.length,
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      pageSize: (json['pageSize'] as num?)?.toInt() ?? itemsRaw.length,
+    );
+  }
+}

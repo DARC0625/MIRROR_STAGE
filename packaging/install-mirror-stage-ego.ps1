@@ -417,6 +417,71 @@ function Ensure-Elevation {
     exit $exit
 }
 
+function Grant-SymlinkPrivilege {
+    param([string]$TargetSid)
+
+    $cfgPath = Join-Path $env:TEMP "mirror_stage_symlink.inf"
+    $dbPath = Join-Path $env:TEMP "mirror_stage_symlink.sdb"
+
+    Write-Log "[Installer] Granting symbolic link privilege to SID $TargetSid" ([ConsoleColor]::DarkGray)
+    & secedit /export /cfg $cfgPath /areas USER_RIGHTS | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to export local security policy (exit $LASTEXITCODE)."
+    }
+
+    $lines = Get-Content -Path $cfgPath -ErrorAction Stop
+    $list = New-Object System.Collections.Generic.List[string]
+    foreach ($line in $lines) {
+        $list.Add($line)
+    }
+
+    $privIndex = -1
+    for ($i = 0; $i -lt $list.Count; $i++) {
+        if ($list[$i] -match '^\s*SeCreateSymbolicLinkPrivilege') {
+            $privIndex = $i
+            break
+        }
+    }
+
+    if ($privIndex -lt 0) {
+        $sectionIndex = -1
+        for ($i = 0; $i -lt $list.Count; $i++) {
+            if ($list[$i].Trim() -eq '[Privilege Rights]') {
+                $sectionIndex = $i
+                break
+            }
+        }
+        if ($sectionIndex -lt 0) {
+            $list.Add('[Privilege Rights]')
+            $sectionIndex = $list.Count - 1
+        }
+        $privIndex = $sectionIndex + 1
+        $list.Insert($privIndex, 'SeCreateSymbolicLinkPrivilege = *S-1-5-32-544')
+    }
+
+    $entry = $list[$privIndex]
+    $parts = $entry.Split('=', 2)
+    $values = @()
+    if ($parts.Length -gt 1) {
+        $values = $parts[1].Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
+    }
+    $sidToken = "*$TargetSid"
+    if (-not ($values | Where-Object { $_ -eq $sidToken })) {
+        $values += $sidToken
+    }
+    $list[$privIndex] = "SeCreateSymbolicLinkPrivilege = " + ($values -join ',')
+
+    Set-Content -Path $cfgPath -Value $list -Encoding Unicode
+    & secedit /configure /db $dbPath /cfg $cfgPath /areas USER_RIGHTS | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to apply local security policy (exit $LASTEXITCODE)."
+    }
+
+    Remove-Item -Path $cfgPath -ErrorAction SilentlyContinue
+    Remove-Item -Path $dbPath -ErrorAction SilentlyContinue
+    Write-Log "[Installer] Symbolic link privilege updated via Local Security Policy." ([ConsoleColor]::DarkGray)
+}
+
 function Ensure-SymlinkSupport {
     if (Test-SymlinkSupport) {
         Write-Log "[Installer] Windows symbolic link support verified." ([ConsoleColor]::DarkGray)
@@ -438,6 +503,20 @@ function Ensure-SymlinkSupport {
     Start-Sleep -Seconds 2
     if (Test-SymlinkSupport) {
         Write-Log "[Installer] Symbolic link support verified after updating Developer Mode." ([ConsoleColor]::DarkGray)
+        return
+    }
+
+    Write-Log "[Installer] Attempting to grant symbolic link privileges to the current user." ([ConsoleColor]::Yellow)
+    try {
+        $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        Grant-SymlinkPrivilege -TargetSid $sid
+    } catch {
+        Write-Log "[Installer] Failed to grant symbolic link privilege automatically: $_" ([ConsoleColor]::Yellow)
+    }
+
+    Start-Sleep -Seconds 2
+    if (Test-SymlinkSupport) {
+        Write-Log "[Installer] Symbolic link support verified after updating security policy." ([ConsoleColor]::DarkGray)
         return
     }
 
