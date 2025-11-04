@@ -41,6 +41,8 @@ const String _egoHostId = 'ego-hub';
 class TwinPosition {
   const TwinPosition({required this.x, required this.y, required this.z});
 
+  static const zero = TwinPosition(x: 0, y: 0, z: 0);
+
   final double x;
   final double y;
   final double z;
@@ -55,6 +57,17 @@ class TwinPosition {
 
   TwinPosition scale(double factor) =>
       TwinPosition(x: x * factor, y: y * factor, z: z * factor);
+
+  TwinPosition subtract(TwinPosition other) =>
+      TwinPosition(x: x - other.x, y: y - other.y, z: z - other.z);
+
+  static TwinPosition lerp(TwinPosition a, TwinPosition b, double t) {
+    return TwinPosition(
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      z: a.z + (b.z - a.z) * t,
+    );
+  }
 }
 
 class HostMetricsSummary {

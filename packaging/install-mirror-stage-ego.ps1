@@ -595,6 +595,41 @@ function Invoke-LoggedProcess {
     }
 }
 
+function Invoke-NpmCiWithRetry {
+    param(
+        [string]$NpmPath,
+        [string]$WorkingDirectory
+    )
+
+    $commandDescription = "npm ci (backend)"
+    try {
+        Invoke-LoggedProcess -FilePath $NpmPath -Arguments "ci" -WorkingDirectory $WorkingDirectory -Description $commandDescription
+        return
+    } catch {
+        $message = $_.Exception?.Message
+        if (-not $message) { $message = $_.ToString() }
+        if ($message -notmatch 'EPERM' -and $message -notmatch '-4048') {
+            throw
+        }
+
+        Write-Log "[Installer] npm ci reported a file-lock (EPERM). Clearing node_modules and retrying once..." ([ConsoleColor]::Yellow)
+        $nodeModules = Join-Path $WorkingDirectory 'node_modules'
+        $lockFile = Join-Path $WorkingDirectory 'package-lock.json'
+        try {
+            if (Test-Path $nodeModules) {
+                Remove-Item -Path $nodeModules -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            if (Test-Path $lockFile) {
+                Remove-Item -Path $lockFile -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+            Write-Log "[Installer] Warning: failed to clean node_modules prior to retry: $_" ([ConsoleColor]::Yellow)
+        }
+        Start-Sleep -Seconds 1
+        Invoke-LoggedProcess -FilePath $NpmPath -Arguments "ci" -WorkingDirectory $WorkingDirectory -Description "$commandDescription (retry)"
+    }
+}
+
 try {
     Write-Log "[Installer] Starting MIRROR STAGE EGO installation"
     Publish-Status "Starting installation..."
@@ -646,7 +681,7 @@ try {
     $env:Path = "$nodeBin;$flutterBin;$env:Path"
 
     Start-Step "Installing backend dependencies (npm ci)"
-    Invoke-LoggedProcess -FilePath $node.Npm -Arguments "ci" -WorkingDirectory $backendDir -Description "npm ci (backend)"
+    Invoke-NpmCiWithRetry -NpmPath $node.Npm -WorkingDirectory $backendDir
 
     Start-Step "Building backend application (npm run build)"
     Invoke-LoggedProcess -FilePath $node.Npm -Arguments "run build" -WorkingDirectory $backendDir -Description "npm run build (backend)"
