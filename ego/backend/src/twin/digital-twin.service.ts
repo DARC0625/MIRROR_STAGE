@@ -12,6 +12,10 @@ import type {
   HostMetricsSummary,
   TwinHostStatus,
   HostHardwareSummary,
+  HostDiagnosticsSnapshot,
+  HostProcessSnapshot,
+  HostDiskSnapshot,
+  HostInterfaceSnapshot,
 } from './digital-twin.types';
 
 interface HostState {
@@ -29,6 +33,8 @@ interface HostState {
   previousNetBytesRx?: number | null;
   previousSampleTimestamp?: number | null;
   netCapacityGbps?: number | null;
+  diagnostics?: HostDiagnosticsSnapshot;
+  isSynthetic?: boolean;
 }
 
 const EGO_HOSTNAME = process.env.EGO_HOSTNAME ?? 'ego-hub';
@@ -95,9 +101,13 @@ export class DigitalTwinService {
 
     const capacityGbps = this.extractCapacityGbps(sample, current.netCapacityGbps);
     const throughputGbps = this.computeThroughputGbps(current, sample, sampleTimestamp);
+    const diagnostics = this.extractDiagnostics(sample, current.diagnostics);
+    const isSynthetic = this.detectSynthetic(sample) || current.isSynthetic || false;
 
     metrics.netThroughputGbps = throughputGbps ?? current.metrics.netThroughputGbps ?? null;
     metrics.netCapacityGbps = capacityGbps ?? metrics.netCapacityGbps ?? null;
+    metrics.cpuPerCore = diagnostics?.cpuPerCore ?? current.metrics.cpuPerCore ?? null;
+    metrics.swapUsedPercent = diagnostics?.swapUsedPercent ?? current.metrics.swapUsedPercent ?? null;
 
     current.ip = ipAddress;
     current.metrics = metrics;
@@ -109,6 +119,8 @@ export class DigitalTwinService {
     current.previousNetBytesTx = sample.net_bytes_tx ?? current.previousNetBytesTx ?? null;
     current.previousNetBytesRx = sample.net_bytes_rx ?? current.previousNetBytesRx ?? null;
     current.previousSampleTimestamp = sampleTimestamp;
+    current.diagnostics = diagnostics;
+    current.isSynthetic = isSynthetic;
     this.mergeHardwareSnapshot(current, hardware);
     current.positionOverride = sample.position
       ? {
@@ -170,10 +182,12 @@ export class DigitalTwinService {
         agentVersion: host.agentVersion,
         platform: host.platform,
         rack: host.rack,
-      metrics: host.metrics,
-      position,
-      hardware: host.hardware,
-    };
+        metrics: host.metrics,
+        position,
+        hardware: host.hardware,
+        diagnostics: host.diagnostics,
+        isSynthetic: host.isSynthetic ?? false,
+      };
 
       renderedHosts.push(twinHost);
 
@@ -253,6 +267,133 @@ export class DigitalTwinService {
       return Math.max(0.01, (base * 8) / 1_000_000_000);
     }
     return Math.max(0.05, (metrics.cpuLoad / 100) * 2);
+  }
+
+  private extractDiagnostics(sample: MetricSample, previous?: HostDiagnosticsSnapshot): HostDiagnosticsSnapshot | undefined {
+    const diagnostics: HostDiagnosticsSnapshot = previous ? { ...previous } : {};
+    let mutated = false;
+
+    const perCore = (sample as Record<string, unknown>)['cpu_per_core'];
+    if (Array.isArray(perCore)) {
+      diagnostics.cpuPerCore = perCore
+        .map((entry) => this.coerceNullableNumber(entry))
+        .filter((value): value is number => value != null && Number.isFinite(value));
+      mutated = true;
+    }
+
+    const swap = (sample as Record<string, unknown>)['swap_used_percent'];
+    if (swap !== undefined) {
+      diagnostics.swapUsedPercent = this.coerceNullableNumber(swap);
+      mutated = true;
+    }
+
+    const processesRaw = (sample as Record<string, unknown>)['top_processes'];
+    if (Array.isArray(processesRaw)) {
+      diagnostics.topProcesses = processesRaw
+        .map((entry) => this.normalizeProcess(entry))
+        .filter((entry): entry is HostProcessSnapshot => entry !== null)
+        .slice(0, 6);
+      mutated = true;
+    }
+
+    const disksRaw = (sample as Record<string, unknown>)['disks'];
+    if (Array.isArray(disksRaw)) {
+      diagnostics.disks = disksRaw
+        .map((entry) => this.normalizeDisk(entry))
+        .filter((entry): entry is HostDiskSnapshot => entry !== null)
+        .slice(0, 6);
+      mutated = true;
+    }
+
+    const interfacesRaw = (sample as Record<string, unknown>)['interfaces'];
+    if (Array.isArray(interfacesRaw)) {
+      diagnostics.interfaces = interfacesRaw
+        .map((entry) => this.normalizeInterface(entry))
+        .filter((entry): entry is HostInterfaceSnapshot => entry !== null)
+        .slice(0, 8);
+      mutated = true;
+    }
+
+    if (sample.tags && Object.keys(sample.tags).length > 0) {
+      diagnostics.tags = { ...sample.tags };
+      mutated = true;
+    }
+
+    return mutated ? diagnostics : previous;
+  }
+
+  private normalizeProcess(entry: unknown): HostProcessSnapshot | null {
+    if (!entry || typeof entry !== 'object') {
+      return null;
+    }
+    const source = entry as Record<string, unknown>;
+    const name = this.pickString(source.name, source.command, source.cmdline);
+    if (!name) {
+      return null;
+    }
+    const pid = this.coerceNullableInteger(source.pid) ?? 0;
+    const cpuPercent = this.coerceNullableNumber(source['cpu_percent'] ?? source['cpuPercent']) ?? 0;
+    const memoryPercent = this.coerceNullableNumber(source['memory_percent'] ?? source['memoryPercent']);
+    const username = this.pickString(source['username'], source['user'], source['owner']);
+    return {
+      pid,
+      name,
+      cpuPercent,
+      memoryPercent,
+      username,
+    };
+  }
+
+  private normalizeDisk(entry: unknown): HostDiskSnapshot | null {
+    if (!entry || typeof entry !== 'object') {
+      return null;
+    }
+    const source = entry as Record<string, unknown>;
+    const device = this.pickString(source.device, source.name) ?? 'disk';
+    const mountpoint = this.pickString(source.mountpoint, source.path) ?? device;
+    return {
+      device,
+      mountpoint,
+      totalBytes: this.coerceNullableNumber(source['total_bytes'] ?? source['totalBytes']),
+      usedBytes: this.coerceNullableNumber(source['used_bytes'] ?? source['usedBytes']),
+      usedPercent: this.coerceNullableNumber(source['used_percent'] ?? source['usedPercent']),
+    };
+  }
+
+  private normalizeInterface(entry: unknown): HostInterfaceSnapshot | null {
+    if (!entry || typeof entry !== 'object') {
+      return null;
+    }
+    const source = entry as Record<string, unknown>;
+    const name = this.pickString(source.name, source.iface) ?? 'iface';
+    return {
+      name,
+      speedMbps: this.coerceNullableNumber(source['speed_mbps'] ?? source['speedMbps']),
+      isUp:
+        typeof source['is_up'] === 'boolean'
+          ? (source['is_up'] as boolean)
+          : typeof source['isUp'] === 'boolean'
+            ? (source['isUp'] as boolean)
+            : undefined,
+      bytesSent: this.coerceNullableNumber(source['bytes_sent'] ?? source['bytesSent']),
+      bytesRecv: this.coerceNullableNumber(source['bytes_recv'] ?? source['bytesRecv']),
+    };
+  }
+
+  private detectSynthetic(sample: MetricSample): boolean {
+    const agentVersion = (sample.agent_version ?? '').toLowerCase();
+    const platform = (sample.platform ?? '').toLowerCase();
+    const profile = sample.tags?.profile?.toLowerCase();
+    if (agentVersion.includes('seed') || agentVersion.includes('synthetic')) {
+      return true;
+    }
+    if (platform.includes('synthetic')) {
+      return true;
+    }
+    if (profile === 'seed' || sample.tags?.generator === 'dev_seed_metrics') {
+      return true;
+    }
+    return false;
   }
 
   private parseTimestamp(timestamp: string | undefined, fallbackMs: number): number {

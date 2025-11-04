@@ -13,6 +13,41 @@ export interface HostMetricsSummary {
   netBytesRx?: number | null;
   netThroughputGbps?: number | null;
   netCapacityGbps?: number | null;
+  swapUsedPercent?: number | null;
+  cpuPerCore?: number[] | null;
+}
+
+export interface HostProcessSnapshot {
+  pid: number;
+  name: string;
+  cpuPercent: number;
+  memoryPercent?: number | null;
+  username?: string | null;
+}
+
+export interface HostDiskSnapshot {
+  device: string;
+  mountpoint: string;
+  totalBytes?: number | null;
+  usedBytes?: number | null;
+  usedPercent?: number | null;
+}
+
+export interface HostInterfaceSnapshot {
+  name: string;
+  speedMbps?: number | null;
+  isUp?: boolean | null;
+  bytesSent?: number | null;
+  bytesRecv?: number | null;
+}
+
+export interface HostDiagnosticsSnapshot {
+  cpuPerCore?: number[] | null;
+  swapUsedPercent?: number | null;
+  topProcesses?: HostProcessSnapshot[];
+  disks?: HostDiskSnapshot[];
+  interfaces?: HostInterfaceSnapshot[];
+  tags?: Record<string, string>;
 }
 
 export interface HostHardwareSummary {
@@ -47,6 +82,8 @@ export interface HostTwinState {
   metrics: HostMetricsSummary;
   position: TwinPosition;
   hardware?: HostHardwareSummary;
+  diagnostics?: HostDiagnosticsSnapshot;
+  isSynthetic?: boolean;
 }
 
 export interface TwinLink {

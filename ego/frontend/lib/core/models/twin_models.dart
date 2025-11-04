@@ -71,6 +71,8 @@ class HostMetricsSummary {
     this.netBytesRx,
     this.netThroughputGbps,
     this.netCapacityGbps,
+    this.swapUsedPercent,
+    this.cpuPerCore = const [],
   });
 
   final double cpuLoad;
@@ -85,6 +87,8 @@ class HostMetricsSummary {
   final double? netBytesRx;
   final double? netThroughputGbps;
   final double? netCapacityGbps;
+  final double? swapUsedPercent;
+  final List<double> cpuPerCore;
 
   double? get memoryUsedBytes {
     if (memoryTotalBytes == null) {
@@ -101,13 +105,21 @@ class HostMetricsSummary {
       uptimeSeconds: (json['uptimeSeconds'] as num?)?.toDouble() ?? 0,
       gpuTemperature: (json['gpuTemperature'] as num?)?.toDouble(),
       cpuTemperature: (json['cpuTemperature'] as num?)?.toDouble(),
-      memoryTotalBytes: (json['memoryTotalBytes'] as num?)?.toDouble() ?? (json['memory_total_bytes'] as num?)?.toDouble(),
+      memoryTotalBytes:
+          (json['memoryTotalBytes'] as num?)?.toDouble() ??
+          (json['memory_total_bytes'] as num?)?.toDouble(),
       memoryAvailableBytes:
-          (json['memoryAvailableBytes'] as num?)?.toDouble() ?? (json['memory_available_bytes'] as num?)?.toDouble(),
+          (json['memoryAvailableBytes'] as num?)?.toDouble() ??
+          (json['memory_available_bytes'] as num?)?.toDouble(),
       netBytesTx: (json['netBytesTx'] as num?)?.toDouble(),
       netBytesRx: (json['netBytesRx'] as num?)?.toDouble(),
       netThroughputGbps: (json['netThroughputGbps'] as num?)?.toDouble(),
       netCapacityGbps: (json['netCapacityGbps'] as num?)?.toDouble(),
+      swapUsedPercent: (json['swapUsedPercent'] as num?)?.toDouble(),
+      cpuPerCore: ((json['cpuPerCore'] as List<dynamic>?) ?? const [])
+          .map((value) => (value as num?)?.toDouble())
+          .whereType<double>()
+          .toList(growable: false),
     );
   }
 }
@@ -142,13 +154,26 @@ class HostHardwareSummary {
       return const HostHardwareSummary();
     }
     return HostHardwareSummary(
-      systemManufacturer: _stringOrNull(json['systemManufacturer']) ?? _stringOrNull(json['system_manufacturer']),
-      systemModel: _stringOrNull(json['systemModel']) ?? _stringOrNull(json['system_model']),
-      biosVersion: _stringOrNull(json['biosVersion']) ?? _stringOrNull(json['bios_version']),
-      cpuModel: _stringOrNull(json['cpuModel']) ?? _stringOrNull(json['cpu_model']),
-      cpuPhysicalCores: _intOrNull(json['cpuPhysicalCores'] ?? json['cpu_physical_cores']),
-      cpuLogicalCores: _intOrNull(json['cpuLogicalCores'] ?? json['cpu_logical_cores']),
-      memoryTotalBytes: _doubleOrNull(json['memoryTotalBytes'] ?? json['memory_total_bytes']),
+      systemManufacturer:
+          _stringOrNull(json['systemManufacturer']) ??
+          _stringOrNull(json['system_manufacturer']),
+      systemModel:
+          _stringOrNull(json['systemModel']) ??
+          _stringOrNull(json['system_model']),
+      biosVersion:
+          _stringOrNull(json['biosVersion']) ??
+          _stringOrNull(json['bios_version']),
+      cpuModel:
+          _stringOrNull(json['cpuModel']) ?? _stringOrNull(json['cpu_model']),
+      cpuPhysicalCores: _intOrNull(
+        json['cpuPhysicalCores'] ?? json['cpu_physical_cores'],
+      ),
+      cpuLogicalCores: _intOrNull(
+        json['cpuLogicalCores'] ?? json['cpu_logical_cores'],
+      ),
+      memoryTotalBytes: _doubleOrNull(
+        json['memoryTotalBytes'] ?? json['memory_total_bytes'],
+      ),
       osDistro: _stringOrNull(json['osDistro'] ?? json['os_distro']),
       osRelease: _stringOrNull(json['osRelease'] ?? json['os_release']),
       osKernel: _stringOrNull(json['osKernel'] ?? json['os_kernel']),
@@ -172,6 +197,159 @@ class HostHardwareSummary {
   }
 }
 
+class TwinProcessSample {
+  const TwinProcessSample({
+    required this.pid,
+    required this.name,
+    required this.cpuPercent,
+    this.memoryPercent,
+    this.username,
+  });
+
+  final int pid;
+  final String name;
+  final double cpuPercent;
+  final double? memoryPercent;
+  final String? username;
+
+  factory TwinProcessSample.fromJson(Map<String, dynamic> json) =>
+      TwinProcessSample(
+        pid: json['pid'] as int? ?? 0,
+        name: json['name'] as String? ?? 'process',
+        cpuPercent:
+            (json['cpuPercent'] as num?)?.toDouble() ??
+            (json['cpu_percent'] as num?)?.toDouble() ??
+            0,
+        memoryPercent:
+            (json['memoryPercent'] as num?)?.toDouble() ??
+            (json['memory_percent'] as num?)?.toDouble(),
+        username: json['username'] as String? ?? json['user'] as String?,
+      );
+}
+
+class TwinDiskUsage {
+  const TwinDiskUsage({
+    required this.device,
+    required this.mountpoint,
+    this.totalBytes,
+    this.usedBytes,
+    this.usedPercent,
+  });
+
+  final String device;
+  final String mountpoint;
+  final double? totalBytes;
+  final double? usedBytes;
+  final double? usedPercent;
+
+  factory TwinDiskUsage.fromJson(Map<String, dynamic> json) => TwinDiskUsage(
+    device: json['device'] as String? ?? 'disk',
+    mountpoint:
+        json['mountpoint'] as String? ?? json['path'] as String? ?? 'disk',
+    totalBytes:
+        (json['totalBytes'] as num?)?.toDouble() ??
+        (json['total_bytes'] as num?)?.toDouble(),
+    usedBytes:
+        (json['usedBytes'] as num?)?.toDouble() ??
+        (json['used_bytes'] as num?)?.toDouble(),
+    usedPercent:
+        (json['usedPercent'] as num?)?.toDouble() ??
+        (json['used_percent'] as num?)?.toDouble(),
+  );
+}
+
+class TwinInterfaceStats {
+  const TwinInterfaceStats({
+    required this.name,
+    this.speedMbps,
+    this.isUp,
+    this.bytesSent,
+    this.bytesRecv,
+  });
+
+  final String name;
+  final double? speedMbps;
+  final bool? isUp;
+  final double? bytesSent;
+  final double? bytesRecv;
+
+  String get speedLabel {
+    if (speedMbps == null) {
+      return '$name · N/A';
+    }
+    if (speedMbps! >= 1000) {
+      return '$name · ${(speedMbps! / 1000).toStringAsFixed(1)} Gbps';
+    }
+    return '$name · ${speedMbps!.toStringAsFixed(0)} Mbps';
+  }
+
+  factory TwinInterfaceStats.fromJson(Map<String, dynamic> json) =>
+      TwinInterfaceStats(
+        name: json['name'] as String? ?? 'iface',
+        speedMbps:
+            (json['speedMbps'] as num?)?.toDouble() ??
+            (json['speed_mbps'] as num?)?.toDouble(),
+        isUp: json['isUp'] as bool? ?? json['is_up'] as bool?,
+        bytesSent:
+            (json['bytesSent'] as num?)?.toDouble() ??
+            (json['bytes_sent'] as num?)?.toDouble(),
+        bytesRecv:
+            (json['bytesRecv'] as num?)?.toDouble() ??
+            (json['bytes_recv'] as num?)?.toDouble(),
+      );
+}
+
+class TwinDiagnostics {
+  const TwinDiagnostics({
+    this.cpuPerCore = const [],
+    this.swapUsedPercent,
+    this.topProcesses = const [],
+    this.disks = const [],
+    this.interfaces = const [],
+    this.tags = const {},
+  });
+
+  final List<double> cpuPerCore;
+  final double? swapUsedPercent;
+  final List<TwinProcessSample> topProcesses;
+  final List<TwinDiskUsage> disks;
+  final List<TwinInterfaceStats> interfaces;
+  final Map<String, String> tags;
+
+  bool get isSeed => tags.containsKey('profile') && tags['profile'] == 'seed';
+
+  factory TwinDiagnostics.fromJson(Map<String, dynamic>? json) {
+    if (json == null) {
+      return const TwinDiagnostics();
+    }
+    return TwinDiagnostics(
+      cpuPerCore: ((json['cpuPerCore'] as List<dynamic>?) ?? const [])
+          .map((value) => (value as num?)?.toDouble())
+          .whereType<double>()
+          .toList(growable: false),
+      swapUsedPercent: (json['swapUsedPercent'] as num?)?.toDouble(),
+      topProcesses: ((json['topProcesses'] as List<dynamic>?) ?? const [])
+          .map(
+            (entry) =>
+                TwinProcessSample.fromJson(entry as Map<String, dynamic>),
+          )
+          .toList(growable: false),
+      disks: ((json['disks'] as List<dynamic>?) ?? const [])
+          .map((entry) => TwinDiskUsage.fromJson(entry as Map<String, dynamic>))
+          .toList(growable: false),
+      interfaces: ((json['interfaces'] as List<dynamic>?) ?? const [])
+          .map(
+            (entry) =>
+                TwinInterfaceStats.fromJson(entry as Map<String, dynamic>),
+          )
+          .toList(growable: false),
+      tags: Map<String, String>.from(
+        json['tags'] as Map? ?? const <String, String>{},
+      ),
+    );
+  }
+}
+
 class TwinHost {
   const TwinHost({
     required this.hostname,
@@ -186,6 +364,8 @@ class TwinHost {
     required this.hardware,
     this.label,
     this.rack,
+    this.diagnostics = const TwinDiagnostics(),
+    this.isSynthetic = false,
   });
 
   final String hostname;
@@ -200,6 +380,8 @@ class TwinHost {
   final TwinPosition position;
   final HostHardwareSummary hardware;
   final String? rack;
+  final TwinDiagnostics diagnostics;
+  final bool isSynthetic;
 
   bool get isEgo => hostname == _egoHostId;
   bool get isCore => isEgo;
@@ -212,7 +394,8 @@ class TwinHost {
   double? get cpuTemperature => metrics.cpuTemperature;
   double? get gpuTemperature => metrics.gpuTemperature;
 
-  double? get memoryTotalBytes => metrics.memoryTotalBytes ?? hardware.memoryTotalBytes;
+  double? get memoryTotalBytes =>
+      metrics.memoryTotalBytes ?? hardware.memoryTotalBytes;
 
   double? get memoryAvailableBytes {
     if (metrics.memoryAvailableBytes != null) {
@@ -266,7 +449,9 @@ class TwinHost {
 
   factory TwinHost.fromJson(Map<String, dynamic> json) {
     final statusString = (json['status'] as String? ?? 'offline').toLowerCase();
-    final rawHardware = HostHardwareSummary.fromJson(json['hardware'] as Map<String, dynamic>?);
+    final rawHardware = HostHardwareSummary.fromJson(
+      json['hardware'] as Map<String, dynamic>?,
+    );
     final derivedHardware = HostHardwareSummary.fromJson(json);
     final hardware = rawHardware.merge(derivedHardware);
     return TwinHost(
@@ -278,7 +463,9 @@ class TwinHost {
         (value) => value.name == statusString,
         orElse: () => TwinHostStatus.offline,
       ),
-      lastSeen: DateTime.tryParse(json['lastSeen'] as String? ?? '') ?? DateTime.now().toUtc(),
+      lastSeen:
+          DateTime.tryParse(json['lastSeen'] as String? ?? '') ??
+          DateTime.now().toUtc(),
       agentVersion: json['agentVersion'] as String? ?? 'unknown',
       platform: json['platform'] as String? ?? 'unknown',
       metrics: HostMetricsSummary.fromJson(
@@ -289,8 +476,14 @@ class TwinHost {
       ),
       hardware: hardware,
       rack: json['rack'] as String?,
+      diagnostics: TwinDiagnostics.fromJson(
+        json['diagnostics'] as Map<String, dynamic>?,
+      ),
+      isSynthetic: json['isSynthetic'] as bool? ?? false,
     );
   }
+
+  bool get isDummy => isSynthetic || diagnostics.isSeed;
 }
 
 class TwinLink {
@@ -338,25 +531,36 @@ class TwinStateFrame {
   UnmodifiableListView<TwinHost> get allHosts => UnmodifiableListView(hosts);
 
   List<TwinHost> get activeHosts =>
-      hosts.where((host) => !host.isCore && host.status != TwinHostStatus.offline).toList()
+      hosts
+          .where(
+            (host) => !host.isCore && host.status != TwinHostStatus.offline,
+          )
+          .toList()
         ..sort((a, b) => b.metrics.cpuLoad.compareTo(a.metrics.cpuLoad));
 
   double get averageCpuLoad {
     final relevant = hosts.where((host) => !host.isCore);
     if (relevant.isEmpty) return 0;
-    final sum = relevant.fold<double>(0, (acc, host) => acc + host.metrics.cpuLoad);
+    final sum = relevant.fold<double>(
+      0,
+      (acc, host) => acc + host.metrics.cpuLoad,
+    );
     return sum / relevant.length;
   }
 
   double get averageMemoryLoad {
     final relevant = hosts.where((host) => !host.isCore);
     if (relevant.isEmpty) return 0;
-    final sum = relevant.fold<double>(0, (acc, host) => acc + host.metrics.memoryUsedPercent);
+    final sum = relevant.fold<double>(
+      0,
+      (acc, host) => acc + host.metrics.memoryUsedPercent,
+    );
     return sum / relevant.length;
   }
 
-  int get onlineHosts =>
-      hosts.where((host) => !host.isCore && host.status == TwinHostStatus.online).length;
+  int get onlineHosts => hosts
+      .where((host) => !host.isCore && host.status == TwinHostStatus.online)
+      .length;
 
   int get totalHosts => hosts.where((host) => !host.isCore).length;
 
@@ -364,11 +568,11 @@ class TwinStateFrame {
       hosts.firstWhereOrNull((host) => host.hostname == name);
 
   factory TwinStateFrame.empty() => TwinStateFrame(
-        twinId: 'project5',
-        generatedAt: DateTime.now().toUtc(),
-        hosts: const [],
-        links: const [],
-      );
+    twinId: 'project5',
+    generatedAt: DateTime.now().toUtc(),
+    hosts: const [],
+    links: const [],
+  );
 
   factory TwinStateFrame.fromJson(Map<String, dynamic> json) {
     final hosts = (json['hosts'] as List<dynamic>? ?? const [])
@@ -379,7 +583,8 @@ class TwinStateFrame {
         .toList();
     return TwinStateFrame(
       twinId: json['twinId'] as String? ?? 'project5',
-      generatedAt: DateTime.tryParse(json['generatedAt'] as String? ?? '') ??
+      generatedAt:
+          DateTime.tryParse(json['generatedAt'] as String? ?? '') ??
           DateTime.now().toUtc(),
       hosts: hosts,
       links: links,
@@ -388,7 +593,9 @@ class TwinStateFrame {
 
   factory TwinStateFrame.fromDynamic(dynamic payload) {
     if (payload is String) {
-      return TwinStateFrame.fromJson(jsonDecode(payload) as Map<String, dynamic>);
+      return TwinStateFrame.fromJson(
+        jsonDecode(payload) as Map<String, dynamic>,
+      );
     }
     if (payload is Map<String, dynamic>) {
       return TwinStateFrame.fromJson(payload);
@@ -488,10 +695,12 @@ class TwinStateFrame {
     if (hosts.isEmpty) return 1;
     return hosts
         .where((host) => !host.isCore)
-        .map((host) => math.sqrt(
-              host.position.x * host.position.x +
-                  host.position.z * host.position.z,
-            ))
+        .map(
+          (host) => math.sqrt(
+            host.position.x * host.position.x +
+                host.position.z * host.position.z,
+          ),
+        )
         .fold<double>(1, math.max);
   }
 }
