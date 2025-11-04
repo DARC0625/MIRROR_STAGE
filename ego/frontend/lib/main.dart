@@ -1642,8 +1642,8 @@ class _HostOverlayCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
     return SizedBox(
-      width: 420,
-      height: 560,
+      width: 480,
+      height: 580,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
@@ -1661,24 +1661,35 @@ class _HostOverlayCard extends StatelessWidget {
                 ),
               ],
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _OverlayHeader(host: host, theme: theme),
-                  const SizedBox(height: 12),
-                  _HostQuickStats(host: host),
-                  const SizedBox(height: 12),
-                  _RealtimeTelemetryCard(
-                    host: host,
-                    samples: samples,
-                    dense: true,
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(child: _DiagnosticsDeck(host: host)),
-                ],
-              ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                _OverlayHeader(host: host, theme: theme),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _SystemSummaryPanel(host: host)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _RealtimeTelemetryCard(
+                        host: host,
+                        samples: samples,
+                        dense: true,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _ProcessPanel(host: host)),
+                    const SizedBox(width: 12),
+                    Expanded(child: _InterfacePanel(host: host)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _StoragePanel(host: host),
+              ],
             ),
           ),
         ),
@@ -1733,189 +1744,214 @@ class _OverlayHeader extends StatelessWidget {
   }
 }
 
-class _HostQuickStats extends StatelessWidget {
-  const _HostQuickStats({required this.host});
+class _SystemSummaryPanel extends StatelessWidget {
+  const _SystemSummaryPanel({required this.host});
 
   final TwinHost host;
 
   @override
   Widget build(BuildContext context) {
-    final cards = <Widget>[
-      _MiniMetric(
-        label: '업타임',
-        value: _formatDuration(host.uptime),
-        caption: host.lastSeen.toLocal().toIso8601String(),
-      ),
-      _MiniMetric(
-        label: '네트워크',
-        value: host.metrics.netThroughputGbps != null
-            ? '${host.metrics.netThroughputGbps!.toStringAsFixed(2)} Gbps'
-            : 'N/A',
-        caption: host.metrics.netCapacityGbps != null
-            ? '용량 ${host.metrics.netCapacityGbps!.toStringAsFixed(1)} Gbps'
-            : '용량 정보 없음',
-      ),
-      _MiniMetric(
-        label: '온도',
-        value: host.cpuTemperature != null
-            ? '${host.cpuTemperature!.toStringAsFixed(1)}℃'
-            : (host.gpuTemperature != null
-                  ? '${host.gpuTemperature!.toStringAsFixed(1)}℃'
-                  : 'N/A'),
-        caption: host.cpuTemperature != null ? 'CPU 센서' : 'GPU/센서 기준',
-      ),
-    ];
+    final metrics = host.metrics;
 
-    return Row(
-      children: [
-        for (int i = 0; i < cards.length; i++) ...[
-          Expanded(child: cards[i]),
-          if (i != cards.length - 1) const SizedBox(width: 12),
-        ],
-      ],
-    );
-  }
-}
+    Iterable<(String, String)> buildRows() sync* {
+      yield ('상태', host.status.name.toUpperCase());
+      yield ('OS', host.osDisplay);
+      yield (
+        '하드웨어',
+        _joinNonEmpty([
+          host.hardware.systemManufacturer,
+          host.hardware.systemModel,
+        ]),
+      );
+      yield ('IP', host.ip);
+      yield ('업타임', _formatDuration(host.uptime));
+      yield ('CPU', host.cpuSummary);
+      yield (
+        '메모리',
+        metrics.memoryTotalBytes != null && metrics.memoryAvailableBytes != null
+            ? '${_formatBytes(metrics.memoryUsedBytes)} / ${_formatBytes(metrics.memoryTotalBytes)}'
+            : '${metrics.memoryUsedPercent.toStringAsFixed(1)}%',
+      );
+      if (metrics.netThroughputGbps != null) {
+        yield (
+          '네트워크',
+          metrics.netCapacityGbps != null
+              ? '${metrics.netThroughputGbps!.toStringAsFixed(2)} / ${metrics.netCapacityGbps!.toStringAsFixed(2)} Gbps'
+              : '${metrics.netThroughputGbps!.toStringAsFixed(2)} Gbps',
+        );
+      }
+      if (metrics.swapUsedPercent != null) {
+        yield ('스왑', '${metrics.swapUsedPercent!.toStringAsFixed(1)}%');
+      }
+      yield ('에이전트', host.agentVersion);
+      yield ('마지막 수신', host.lastSeen.toLocal().toIso8601String());
+    }
 
-class _MiniMetric extends StatelessWidget {
-  const _MiniMetric({required this.label, required this.value, this.caption});
+    final rows = buildRows().toList();
 
-  final String label;
-  final String value;
-  final String? caption;
-
-  @override
-  Widget build(BuildContext context) {
     return _GlassTile(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label.toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white38,
-              fontSize: 10,
-              letterSpacing: 0.6,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
+          const Text(
+            '시스템 상태',
+            style: TextStyle(
+              color: Colors.white70,
               fontWeight: FontWeight.w600,
             ),
           ),
-          if (caption != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                caption!,
-                style: const TextStyle(color: Colors.white30, fontSize: 10),
-              ),
+          const SizedBox(height: 10),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 12,
+              childAspectRatio: 3.6,
             ),
+            itemCount: rows.length,
+            itemBuilder: (context, index) {
+              final entry = rows[index];
+              return _SystemStatCell(label: entry.$1, value: entry.$2);
+            },
+          ),
         ],
       ),
     );
   }
 }
 
-class _DiagnosticsDeck extends StatelessWidget {
-  const _DiagnosticsDeck({required this.host});
+class _SystemStatCell extends StatelessWidget {
+  const _SystemStatCell({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white38, fontSize: 10),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProcessPanel extends StatelessWidget {
+  const _ProcessPanel({required this.host});
 
   final TwinHost host;
 
   @override
   Widget build(BuildContext context) {
-    final diagnostics = host.diagnostics;
-    final processes = diagnostics.topProcesses.take(4).toList(growable: false);
-    final disks = diagnostics.disks.take(2).toList(growable: false);
-    final interfaces = diagnostics.interfaces.take(3).toList(growable: false);
-
-    return Row(
-      children: [
-        Expanded(
-          child: _GlassTile(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '상위 프로세스',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (processes.isEmpty)
-                  const Text(
-                    '데이터 없음',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
-                  )
-                else
-                  ...processes.map((process) => _ProcessRow(process: process)),
-              ],
+    final processes = host.diagnostics.topProcesses
+        .take(4)
+        .toList(growable: false);
+    return _GlassTile(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '상위 프로세스',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            children: [
-              Expanded(
-                child: _GlassTile(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '네트워크 인터페이스',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (interfaces.isEmpty)
-                        const Text(
-                          '데이터 없음',
-                          style: TextStyle(color: Colors.white38, fontSize: 12),
-                        )
-                      else
-                        _InterfaceBadgeBar(interfaces: interfaces),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: _GlassTile(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '스토리지',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (disks.isEmpty)
-                        const Text(
-                          '데이터 없음',
-                          style: TextStyle(color: Colors.white38, fontSize: 12),
-                        )
-                      else
-                        ...disks.map((disk) => _DiskUsageBar(disk: disk)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          const SizedBox(height: 8),
+          if (processes.isEmpty)
+            const Text(
+              '데이터 없음',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            )
+          else
+            ...processes.map((process) => _ProcessRow(process: process)),
+        ],
+      ),
+    );
+  }
+}
+
+class _InterfacePanel extends StatelessWidget {
+  const _InterfacePanel({required this.host});
+
+  final TwinHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    final interfaces = host.diagnostics.interfaces
+        .take(3)
+        .toList(growable: false);
+    return _GlassTile(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '네트워크 인터페이스',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          if (interfaces.isEmpty)
+            const Text(
+              '데이터 없음',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            )
+          else
+            _InterfaceBadgeBar(interfaces: interfaces),
+        ],
+      ),
+    );
+  }
+}
+
+class _StoragePanel extends StatelessWidget {
+  const _StoragePanel({required this.host});
+
+  final TwinHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    final disks = host.diagnostics.disks.take(3).toList(growable: false);
+    return _GlassTile(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '스토리지',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (disks.isEmpty)
+            const Text(
+              '데이터 없음',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            )
+          else
+            ...disks.map((disk) => _DiskUsageBar(disk: disk)),
+        ],
+      ),
     );
   }
 }
@@ -2851,6 +2887,24 @@ class _TwinScenePainter extends CustomPainter {
         canvas,
         position + Offset(-textPainter.width / 2, radius + 6),
       );
+
+      final infoPainter = TextPainter(
+        text: TextSpan(
+          text:
+              'CPU ${host.metrics.cpuLoad.toStringAsFixed(0)}% · RAM ${host.metrics.memoryUsedPercent.toStringAsFixed(0)}%',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.7),
+            fontSize: 10,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: 180);
+
+      infoPainter.paint(
+        canvas,
+        position + Offset(-infoPainter.width / 2, radius + 24),
+      );
     }
   }
 
@@ -2926,4 +2980,16 @@ String _formatDuration(Duration duration) {
     parts.add('${seconds}s');
   }
   return parts.join(' ');
+}
+
+String _joinNonEmpty(List<String?> values, {String separator = ' · '}) {
+  final filtered = values
+      .whereType<String>()
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty)
+      .toList();
+  if (filtered.isEmpty) {
+    return 'N/A';
+  }
+  return filtered.join(separator);
 }
