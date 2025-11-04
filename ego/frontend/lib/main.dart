@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'core/models/command_models.dart';
 import 'core/models/twin_models.dart';
@@ -33,21 +32,18 @@ class MirrorStageApp extends StatelessWidget {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: const Color(0xFF05080D),
       useMaterial3: true,
+      fontFamily: 'Pretendard',
+    );
+
+    final textTheme = baseTheme.textTheme.apply(
+      bodyColor: Colors.white,
+      displayColor: Colors.white,
     );
 
     return MaterialApp(
       title: 'MIRROR STAGE',
       debugShowCheckedModeBanner: false,
-      theme: baseTheme.copyWith(
-        textTheme: GoogleFonts.ibmPlexSansTextTheme(
-          baseTheme.textTheme,
-        ).apply(bodyColor: Colors.white, displayColor: Colors.white),
-        appBarTheme: AppBarTheme(
-          backgroundColor: const Color(0xFF05080D),
-          foregroundColor: colorScheme.onSurface,
-          elevation: 0,
-        ),
-      ),
+      theme: baseTheme.copyWith(textTheme: textTheme),
       home: DigitalTwinShell(channel: channel),
     );
   }
@@ -134,60 +130,73 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
 
         return Scaffold(
           backgroundColor: const Color(0xFF05080D),
-          body: Column(
-            children: [
-              _CommandAppBar(
-                frame: frame,
-                mode: _viewportMode,
-                onModeChange: _setViewportMode,
-              ),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isWide = constraints.maxWidth > 1080;
-                    final stage = _TwinStage(
-                      frame: frame,
-                      mode: _viewportMode,
-                      selectedHost: selectedHost,
-                      heatMax: heatMax,
-                      onSelectHost: _selectHost,
-                    );
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth > 1200;
+                final stage = _TwinStage(
+                  frame: frame,
+                  mode: _viewportMode,
+                  selectedHost: selectedHost,
+                  heatMax: heatMax,
+                  onSelectHost: _selectHost,
+                );
+                final deck = _OperationsDeck(
+                  frame: frame,
+                  selectedHost: selectedHost,
+                );
 
-                    if (isWide) {
-                      return Row(
-                        children: [
-                          _Sidebar(
-                            frame: frame,
-                            mode: _viewportMode,
-                            onModeChange: _setViewportMode,
-                          ),
-                          Expanded(child: stage),
-                          _InsightPanel(
-                            frame: frame,
-                            selectedHost: selectedHost,
-                            onSelectHost: _selectHost,
-                          ),
-                        ],
-                      );
-                    }
-
-                    return Column(
-                      children: [
-                        Expanded(child: stage),
-                        SizedBox(
-                          height: constraints.maxHeight * .4,
-                          child: _InsightPanel(
-                            frame: frame,
-                            selectedHost: selectedHost,
-                            onSelectHost: _selectHost,
-                          ),
+                if (isWide) {
+                  final deckHeight = (constraints.maxHeight * 0.34).clamp(
+                    320.0,
+                    460.0,
+                  );
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _Sidebar(
+                              frame: frame,
+                              mode: _viewportMode,
+                              onModeChange: _setViewportMode,
+                              width: 340,
+                            ),
+                            Expanded(child: stage),
+                          ],
                         ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
+                      ),
+                      SizedBox(height: deckHeight, child: deck),
+                    ],
+                  );
+                }
+
+                final sidebarHeight = (constraints.maxHeight * 0.32).clamp(
+                  220.0,
+                  360.0,
+                );
+                final deckHeight = (constraints.maxHeight * 0.52).clamp(
+                  320.0,
+                  520.0,
+                );
+
+                return Column(
+                  children: [
+                    Expanded(child: stage),
+                    SizedBox(
+                      height: sidebarHeight,
+                      child: _Sidebar(
+                        frame: frame,
+                        mode: _viewportMode,
+                        onModeChange: _setViewportMode,
+                      ),
+                    ),
+                    SizedBox(height: deckHeight, child: deck),
+                  ],
+                );
+              },
+            ),
           ),
         );
       },
@@ -200,146 +209,80 @@ class _Sidebar extends StatelessWidget {
     required this.frame,
     required this.mode,
     required this.onModeChange,
+    this.width,
   });
 
   final TwinStateFrame frame;
   final TwinViewportMode mode;
   final ValueChanged<TwinViewportMode> onModeChange;
+  final double? width;
 
   @override
   Widget build(BuildContext context) {
-    final cpuLoad = frame.averageCpuLoad.clamp(0, 100).toDouble();
-    final memoryPercent = frame.memoryUtilizationPercent
-        .clamp(0, 100)
-        .toDouble();
-    final throughput = frame.estimatedThroughput;
-    final capacity = frame.totalLinkCapacity;
-    final averageTemp = frame.averageCpuTemperature;
-    final peakTemp = frame.maxCpuTemperature;
-    final memorySummary = frame.totalMemoryCapacityGb > 0
-        ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
-        : '${frame.averageMemoryLoad.toStringAsFixed(1)}%';
+    final theme = Theme.of(context).textTheme;
 
-    return Container(
-      width: 300,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-      decoration: const BoxDecoration(
-        border: Border(right: BorderSide(color: Color(0xFF11141D))),
-        gradient: LinearGradient(
-          colors: [Color(0xFF060910), Color(0xFF020307)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+    List<_InfoWidgetConfig> buildWidgets() {
+      return [
+        _InfoWidgetConfig(
+          title: '평균 CPU',
+          child: _AnalogGauge(
+            label: '평균 CPU',
+            value: frame.averageCpuLoad.clamp(0, 100).toDouble(),
+            maxValue: 100,
+            units: '%',
+            decimals: 1,
+            startColor: Colors.lightBlueAccent,
+            endColor: Colors.deepOrangeAccent,
+            subtitle: frame.averageCpuTemperature > 0
+                ? '온도 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃'
+                : null,
+            size: 140,
+          ),
         ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '실시간 개요',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 24),
-            Center(
-              child: _AnalogGauge(
-                label: '평균 CPU',
-                value: cpuLoad,
-                maxValue: 100,
-                units: '%',
-                decimals: 1,
-                subtitle: averageTemp > 0
-                    ? '평균 온도 ${averageTemp.toStringAsFixed(1)}℃'
-                    : null,
-              ),
-            ),
-            const SizedBox(height: 28),
-            Center(
-              child: _AnalogGauge(
-                label: '메모리 사용률',
-                value: memoryPercent,
-                maxValue: 100,
-                units: '%',
-                subtitle: memorySummary,
-                startColor: const Color(0xFF38BDF8),
-                endColor: Colors.deepOrangeAccent,
-                size: 180,
-              ),
-            ),
-            const SizedBox(height: 28),
-            _MetricTile(
-              label: '총 스루풋',
-              value: '${throughput.toStringAsFixed(2)} Gbps',
-              caption: capacity > 0
-                  ? '총 용량 ${capacity.toStringAsFixed(2)} Gbps'
-                  : null,
-            ),
-            _MetricTile(
-              label: '링크 활용률',
-              value:
-                  '${(frame.linkUtilization * 100).clamp(0.0, 100.0).toStringAsFixed(1)}%',
-            ),
-            _MetricTile(
-              label: '피크 온도',
-              value: peakTemp > 0 ? '${peakTemp.toStringAsFixed(1)}℃' : 'N/A',
-            ),
-            const SizedBox(height: 32),
-            Text(
-              '뷰 전환',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.white70,
-                letterSpacing: 0.2,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _NavButton(
-              label: '글로벌 토폴로지',
-              isActive: mode == TwinViewportMode.topology,
-              onPressed: () => onModeChange(TwinViewportMode.topology),
-            ),
-            const SizedBox(height: 10),
-            _NavButton(
-              label: '온도 히트맵',
-              isActive: mode == TwinViewportMode.heatmap,
-              onPressed: () => onModeChange(TwinViewportMode.heatmap),
-            ),
-            const SizedBox(height: 10),
-            _NavButton(
-              label: '자동화 타임라인',
-              isActive: false,
-              onPressed: null,
-              isEnabled: false,
-            ),
-            const SizedBox(height: 32),
-            Text(
-              '생성 시각: ${frame.generatedAt.toLocal().toIso8601String()}',
-              style: const TextStyle(color: Colors.white38, fontSize: 11),
-            ),
-          ],
+        _InfoWidgetConfig(
+          title: '메모리 사용률',
+          child: _AnalogGauge(
+            label: '메모리',
+            value: frame.memoryUtilizationPercent.clamp(0, 100).toDouble(),
+            maxValue: 100,
+            units: '%',
+            decimals: 1,
+            startColor: const Color(0xFF38BDF8),
+            endColor: Colors.deepOrangeAccent,
+            subtitle: frame.totalMemoryCapacityGb > 0
+                ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
+                : null,
+            size: 140,
+          ),
         ),
-      ),
-    );
-  }
-}
+        _InfoWidgetConfig(
+          title: '링크 상태',
+          child: _TrendTile(
+            value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
+            caption: frame.totalLinkCapacity > 0
+                ? '용량 ${frame.totalLinkCapacity.toStringAsFixed(2)} Gbps'
+                : '용량 정보 없음',
+            trend: (frame.linkUtilization * 100).clamp(0.0, 100.0),
+          ),
+        ),
+        _InfoWidgetConfig(
+          title: '온도',
+          child: _TrendTile(
+            value: frame.maxCpuTemperature > 0
+                ? '${frame.maxCpuTemperature.toStringAsFixed(1)}℃'
+                : 'N/A',
+            caption: '평균 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃',
+            trend: (frame.averageCpuTemperature / 110).clamp(0.0, 1.0) * 100,
+          ),
+        ),
+      ];
+    }
 
-class _CommandAppBar extends StatelessWidget {
-  const _CommandAppBar({
-    required this.frame,
-    required this.mode,
-    required this.onModeChange,
-  });
-
-  final TwinStateFrame frame;
-  final TwinViewportMode mode;
-  final ValueChanged<TwinViewportMode> onModeChange;
-
-  @override
-  Widget build(BuildContext context) {
-    final stats = [
+    final widgets = buildWidgets();
+    final statusChips = [
       _StatusChip(label: '내부망', value: '10.0.0.0/24'),
       _StatusChip(
-        label: '온라인 호스트',
+        label: '온라인',
         value: '${frame.onlineHosts}/${frame.totalHosts}',
       ),
       _StatusChip(
@@ -352,78 +295,72 @@ class _CommandAppBar extends StatelessWidget {
             ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
             : '${frame.averageMemoryLoad.toStringAsFixed(1)}%',
       ),
-      _StatusChip(
-        label: '스루풋',
-        value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
-      ),
-      _StatusChip(
-        label: '피크 온도',
-        value: frame.maxCpuTemperature > 0
-            ? '${frame.maxCpuTemperature.toStringAsFixed(1)}℃'
-            : 'N/A',
-      ),
     ];
 
-    return Container(
-      height: 78,
+    final content = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF05080D), Color(0xFF04060A)],
+          colors: [Color(0xFF060910), Color(0xFF020307)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
-        border: Border(bottom: BorderSide(color: Color(0x331B2333))),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-      child: Row(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0D2A3F),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0x332FD0FF)),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '작전 콘솔',
+                  style: theme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.radar,
-                  color: Colors.tealAccent,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'MIRROR STAGE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 32),
-          _ViewModeToggle(mode: mode, onModeChange: onModeChange),
-          const Spacer(),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  alignment: WrapAlignment.end,
-                  children: stats,
-                ),
-              ),
+                const Spacer(),
+                _ViewModeToggle(mode: mode, onModeChange: onModeChange),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Wrap(spacing: 8, runSpacing: 8, children: statusChips),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: widgets
+                  .map(
+                    (config) => SizedBox(
+                      width: 260,
+                      child: _GlassTile(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              config.title,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            config.child,
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ),
       ),
     );
+
+    if (width != null) {
+      return SizedBox(width: width, child: content);
+    }
+    return content;
   }
 }
 
@@ -485,6 +422,7 @@ class _TwinViewport extends StatelessWidget {
     required this.heatMax,
     required this.onSelectHost,
     required this.cameraFocus,
+    required this.linkPulse,
   });
 
   final TwinStateFrame frame;
@@ -494,6 +432,7 @@ class _TwinViewport extends StatelessWidget {
   final double heatMax;
   final ValueChanged<String> onSelectHost;
   final TwinPosition cameraFocus;
+  final double linkPulse;
 
   @override
   Widget build(BuildContext context) {
@@ -549,6 +488,7 @@ class _TwinViewport extends StatelessWidget {
                     selectedHost: selectedHost,
                     heatMax: heatMax,
                     cameraFocus: cameraFocus,
+                    linkPulse: linkPulse,
                   ),
                   child: const SizedBox.expand(),
                 ),
@@ -580,9 +520,10 @@ class _TwinStage extends StatefulWidget {
   State<_TwinStage> createState() => _TwinStageState();
 }
 
-class _TwinStageState extends State<_TwinStage>
-    with SingleTickerProviderStateMixin {
+class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
+  static const _highlightDuration = Duration(milliseconds: 1200);
   late final AnimationController _cameraController;
+  late final AnimationController _linkPulseController;
   TwinPosition _cameraFrom = TwinPosition.zero;
   TwinPosition _cameraTo = TwinPosition.zero;
 
@@ -595,6 +536,11 @@ class _TwinStageState extends State<_TwinStage>
     )..value = 1;
     _cameraTo = widget.selectedHost?.position ?? TwinPosition.zero;
     _cameraFrom = _cameraTo;
+
+    _linkPulseController = AnimationController(
+      vsync: this,
+      duration: _highlightDuration,
+    )..repeat(reverse: true);
   }
 
   @override
@@ -612,6 +558,7 @@ class _TwinStageState extends State<_TwinStage>
   @override
   void dispose() {
     _cameraController.dispose();
+    _linkPulseController.dispose();
     super.dispose();
   }
 
@@ -649,8 +596,15 @@ class _TwinStageState extends State<_TwinStage>
                     heatMax: widget.heatMax,
                     onSelectHost: widget.onSelectHost,
                     cameraFocus: focus,
+                    linkPulse: _linkPulseController.value,
                   ),
                 ),
+                if (widget.selectedHost != null)
+                  Positioned(
+                    left: 24,
+                    top: 24,
+                    child: _HostVitalsBar(host: widget.selectedHost!),
+                  ),
                 Positioned.fill(
                   child: IgnorePointer(
                     ignoring: widget.selectedHost == null,
@@ -686,22 +640,17 @@ class _TwinStageState extends State<_TwinStage>
   }
 }
 
-class _InsightPanel extends StatefulWidget {
-  const _InsightPanel({
-    required this.frame,
-    required this.selectedHost,
-    required this.onSelectHost,
-  });
+class _OperationsDeck extends StatefulWidget {
+  const _OperationsDeck({required this.frame, required this.selectedHost});
 
   final TwinStateFrame frame;
   final TwinHost? selectedHost;
-  final ValueChanged<String> onSelectHost;
 
   @override
-  State<_InsightPanel> createState() => _InsightPanelState();
+  State<_OperationsDeck> createState() => _OperationsDeckState();
 }
 
-class _InsightPanelState extends State<_InsightPanel> {
+class _OperationsDeckState extends State<_OperationsDeck> {
   late final CommandService _commandService;
   final TextEditingController _commandController = TextEditingController();
   final TextEditingController _timeoutController = TextEditingController();
@@ -732,7 +681,7 @@ class _InsightPanelState extends State<_InsightPanel> {
   }
 
   @override
-  void didUpdateWidget(covariant _InsightPanel oldWidget) {
+  void didUpdateWidget(covariant _OperationsDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
     final hostChanged =
         widget.selectedHost?.hostname != oldWidget.selectedHost?.hostname;
@@ -865,77 +814,168 @@ class _InsightPanelState extends State<_InsightPanel> {
   @override
   Widget build(BuildContext context) {
     final hosts = widget.frame.hosts.where((host) => !host.isCore).toList();
-    final theme = Theme.of(context);
+    final headerChips = [
+      _StatusChip(
+        label: '온라인 노드',
+        value: '${widget.frame.onlineHosts}/${widget.frame.totalHosts}',
+      ),
+      _StatusChip(
+        label: '링크 처리량',
+        value: '${widget.frame.estimatedThroughput.toStringAsFixed(1)} Gbps',
+      ),
+      _StatusChip(
+        label: '총 용량',
+        value: '${widget.frame.totalLinkCapacity.toStringAsFixed(1)} Gbps',
+      ),
+      _StatusChip(
+        label: '평균 온도',
+        value: widget.frame.averageCpuTemperature > 0
+            ? '${widget.frame.averageCpuTemperature.toStringAsFixed(1)}℃'
+            : 'N/A',
+      ),
+    ];
 
     return Container(
-      width: 360,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       decoration: const BoxDecoration(
-        border: Border(left: BorderSide(color: Color(0xFF11141D))),
+        border: Border(top: BorderSide(color: Color(0x22111B2D))),
         gradient: LinearGradient(
-          colors: [Color(0xFF080C14), Color(0xFF020408)],
+          colors: [Color(0xFF05070D), Color(0xFF020307)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '원격 자동화',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth > 1180;
+
+          Widget logSection({required bool stretch}) {
+            return _DeckSection(
+              title: '실행 로그',
+              expandChild: stretch,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text('최근 명령'),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: '목록 새로고침',
+                        onPressed: _loadingCommands
+                            ? null
+                            : () => _refreshCommands(reset: true),
+                        icon: const Icon(Icons.refresh, size: 16),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _buildCommandFilters(hosts),
+                  const SizedBox(height: 12),
+                  if (stretch)
+                    Expanded(child: _buildCommandList(scrollable: true))
+                  else
+                    _buildCommandList(),
+                  if (_hasMore)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _loadMore,
+                        icon: const Icon(Icons.expand_more),
+                        label: const Text('더 불러오기'),
+                      ),
+                    ),
+                ],
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '선택한 노드 혹은 지정된 대상에게 명령을 전송하고 실행 로그를 추적합니다.',
-              style: theme.textTheme.bodySmall?.copyWith(color: Colors.white54),
-            ),
-            const SizedBox(height: 16),
-            _buildCommandForm(widget.selectedHost),
-            const SizedBox(height: 20),
-            Text(
-              '필터',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+            );
+          }
+
+          final header = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'TACTICAL OPERATIONS',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            _buildCommandFilters(hosts),
-            const SizedBox(height: 20),
-            Row(
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, children: headerChips),
+            ],
+          );
+
+          if (isWide) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '실행 로그',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                header,
+                const SizedBox(height: 20),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          children: [
+                            _DeckSection(
+                              title: '원격 자동화',
+                              description: '선택한 노드 혹은 지정된 대상에게 명령을 투입합니다.',
+                              child: SingleChildScrollView(
+                                physics: const BouncingScrollPhysics(),
+                                child: _buildCommandForm(widget.selectedHost),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Expanded(
+                              child: _DeckSection(
+                                title: '노드 스냅샷',
+                                child: _buildNodeSnapshot(widget.selectedHost),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 24),
+                      Expanded(flex: 3, child: logSection(stretch: true)),
+                    ],
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '목록 새로고침',
-                  onPressed: _loadingCommands
-                      ? null
-                      : () => _refreshCommands(reset: true),
-                  icon: const Icon(Icons.refresh),
-                ),
               ],
-            ),
-            const SizedBox(height: 8),
-            _buildCommandList(),
-            if (_hasMore)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: _loadMore,
-                  icon: const Icon(Icons.expand_more),
-                  label: const Text('더 불러오기'),
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              header,
+              const SizedBox(height: 16),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      _DeckSection(
+                        title: '원격 자동화',
+                        description: '선택한 노드 혹은 지정된 대상에게 명령을 투입합니다.',
+                        child: _buildCommandForm(widget.selectedHost),
+                      ),
+                      const SizedBox(height: 16),
+                      _DeckSection(
+                        title: '노드 스냅샷',
+                        child: _buildNodeSnapshot(widget.selectedHost),
+                      ),
+                      const SizedBox(height: 16),
+                      logSection(stretch: false),
+                    ],
+                  ),
                 ),
               ),
-          ],
-        ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1127,7 +1167,91 @@ class _InsightPanelState extends State<_InsightPanel> {
     );
   }
 
-  Widget _buildCommandList() {
+  Widget _buildNodeSnapshot(TwinHost? host) {
+    if (host == null) {
+      return const Text(
+        '노드를 선택하면 자산 정보가 표시됩니다.',
+        style: TextStyle(color: Colors.white38, fontSize: 13),
+      );
+    }
+
+    final osLabel = _joinNonEmpty([
+      host.hardware.osDistro,
+      host.hardware.osRelease,
+    ], separator: ' ');
+    final hardwareBadges = <Widget>[
+      if (host.hardware.systemModel != null)
+        _InfoPill(icon: Icons.devices_other, label: host.hardware.systemModel!),
+      if (host.hardware.cpuModel != null)
+        _InfoPill(icon: Icons.memory, label: host.hardware.cpuModel!),
+      if (osLabel != 'N/A') _InfoPill(icon: Icons.dns, label: osLabel),
+      _InfoPill(
+        icon: Icons.schedule,
+        label: '업타임 ${_formatDuration(host.uptime)}',
+      ),
+      _InfoPill(icon: Icons.token, label: 'Agent ${host.agentVersion}'),
+    ];
+
+    final processes = host.diagnostics.topProcesses.take(3).toList();
+    final interfaces = host.diagnostics.interfaces;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (host.isDummy)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.amberAccent),
+              color: const Color(0x220D111A),
+            ),
+            child: const Text(
+              '시뮬레이션 노드',
+              style: TextStyle(
+                color: Colors.amberAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        if (hardwareBadges.isNotEmpty)
+          Wrap(spacing: 8, runSpacing: 8, children: hardwareBadges)
+        else
+          const Text(
+            '인벤토리 정보 없음',
+            style: TextStyle(color: Colors.white30, fontSize: 12),
+          ),
+        if (interfaces.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const Text(
+            '인터페이스',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _InterfaceBadgeBar(interfaces: interfaces),
+        ],
+        if (processes.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const Text(
+            '상위 프로세스',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...processes.map((process) => _ProcessRow(process: process)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCommandList({bool scrollable = false}) {
     final children = <Widget>[];
 
     if (_loadingCommands) {
@@ -1198,6 +1322,14 @@ class _InsightPanelState extends State<_InsightPanel> {
       );
     }
 
+    if (scrollable) {
+      return ListView(
+        padding: EdgeInsets.zero,
+        physics: const BouncingScrollPhysics(),
+        children: children,
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: children,
@@ -1217,45 +1349,6 @@ class _InsightPanelState extends State<_InsightPanel> {
       case CommandStatus.timeout:
         return '시간 초과';
     }
-  }
-}
-
-class _MetricTile extends StatelessWidget {
-  const _MetricTile({required this.label, required this.value, this.caption});
-
-  final String label;
-  final String value;
-  final String? caption;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white54, fontSize: 12),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          if (caption != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                caption!,
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
-              ),
-            ),
-        ],
-      ),
-    );
   }
 }
 
@@ -1438,49 +1531,6 @@ class _GaugePainter extends CustomPainter {
       oldDelegate.normalized != normalized || oldDelegate.color != color;
 }
 
-class _NavButton extends StatelessWidget {
-  const _NavButton({
-    required this.label,
-    required this.isActive,
-    this.onPressed,
-    this.isEnabled = true,
-  });
-
-  final String label;
-  final bool isActive;
-  final VoidCallback? onPressed;
-  final bool isEnabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool enabled = isEnabled && onPressed != null;
-    final Color baseColor = isActive
-        ? Colors.tealAccent
-        : const Color(0xFF1A1F2B);
-    final Color textColor = isActive
-        ? Colors.white
-        : enabled
-        ? Colors.white70
-        : Colors.white24;
-
-    return OutlinedButton(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: textColor,
-        side: BorderSide(
-          color: baseColor.withValues(alpha: isActive ? 1 : 0.6),
-        ),
-        backgroundColor: isActive
-            ? const Color(0xFF124559)
-            : const Color(0xFF0A101A),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      onPressed: enabled ? onPressed : null,
-      child: Align(alignment: Alignment.centerLeft, child: Text(label)),
-    );
-  }
-}
-
 class _StatusChip extends StatelessWidget {
   const _StatusChip({required this.label, required this.value});
 
@@ -1647,7 +1697,7 @@ class _HostOverlayCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
             decoration: BoxDecoration(
               color: const Color(0xF00D141F),
@@ -1693,6 +1743,226 @@ class _HostOverlayCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _HostVitalsBar extends StatelessWidget {
+  const _HostVitalsBar({required this.host});
+
+  final TwinHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    final osLabel = _joinNonEmpty([
+      host.hardware.osDistro,
+      host.hardware.osRelease,
+      host.hardware.osKernel,
+    ], separator: ' ');
+    final iface = _primaryInterface(host);
+    final throughput = host.metrics.netThroughputGbps;
+    final capacity = host.metrics.netCapacityGbps;
+    final memUsed = host.memoryUsedBytes;
+    final memTotal = host.memoryTotalBytes;
+    final memLabel = (memUsed != null && memTotal != null)
+        ? '${_formatBytes(memUsed)} / ${_formatBytes(memTotal)}'
+        : '${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%';
+
+    final stats = [
+      _VitalStat(
+        icon: Icons.speed,
+        label: 'CPU',
+        value: '${host.metrics.cpuLoad.toStringAsFixed(1)}%',
+      ),
+      _VitalStat(icon: Icons.memory, label: '메모리', value: memLabel),
+      _VitalStat(
+        icon: Icons.thermostat,
+        label: '온도',
+        value: host.cpuTemperature != null || host.gpuTemperature != null
+            ? '${(host.cpuTemperature ?? host.gpuTemperature)!.toStringAsFixed(1)}℃'
+            : 'N/A',
+      ),
+      _VitalStat(
+        icon: Icons.wifi_tethering,
+        label: '대역폭',
+        value: throughput != null
+            ? capacity != null
+                  ? '${throughput.toStringAsFixed(2)} / ${capacity.toStringAsFixed(1)} Gbps'
+                  : '${throughput.toStringAsFixed(2)} Gbps'
+            : '계측 없음',
+      ),
+      _VitalStat(
+        icon: Icons.access_time,
+        label: '업타임',
+        value: _formatDuration(host.uptime),
+      ),
+      _VitalStat(
+        icon: Icons.device_hub,
+        label: '인터페이스',
+        value: iface?.speedLabel ?? host.ip,
+      ),
+    ];
+
+    return SizedBox(
+      width: 420,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xE6050B16),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0x221B2333)),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black54,
+              blurRadius: 18,
+              offset: Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        host.displayName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        host.ip,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (host.isDummy)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.amberAccent),
+                      color: Colors.black26,
+                    ),
+                    child: const Text(
+                      'DUMMY',
+                      style: TextStyle(
+                        color: Colors.amberAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              osLabel,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Agent ${host.agentVersion}',
+              style: const TextStyle(color: Colors.white30, fontSize: 11),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: stats
+                  .map(
+                    (stat) => _VitalStatTile(
+                      icon: stat.icon,
+                      label: stat.label,
+                      value: stat.value,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VitalStat {
+  const _VitalStat({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+}
+
+class _VitalStatTile extends StatelessWidget {
+  const _VitalStatTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 180,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0x11091A29),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x221B2333)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: Colors.white54, size: 14),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1975,6 +2245,116 @@ class _GlassTile extends StatelessWidget {
   }
 }
 
+class _DeckSection extends StatelessWidget {
+  const _DeckSection({
+    required this.title,
+    required this.child,
+    this.description,
+    this.expandChild = false,
+  });
+
+  final String title;
+  final String? description;
+  final Widget child;
+  final bool expandChild;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = <Widget>[
+      Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white70,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ];
+    if (description != null) {
+      content.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            description!,
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+        ),
+      );
+    }
+    content.add(const SizedBox(height: 12));
+    content.add(expandChild ? Expanded(child: child) : child);
+
+    return _GlassTile(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: content,
+      ),
+    );
+  }
+}
+
+class _InfoWidgetConfig {
+  const _InfoWidgetConfig({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+}
+
+class _TrendTile extends StatelessWidget {
+  const _TrendTile({required this.value, this.caption, required this.trend});
+
+  final String value;
+  final String? caption;
+  final double trend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        if (caption != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              caption!,
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+          ),
+        const SizedBox(height: 8),
+        _TrendBar(percent: trend),
+      ],
+    );
+  }
+}
+
+class _TrendBar extends StatelessWidget {
+  const _TrendBar({required this.percent});
+
+  final double percent;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: LinearProgressIndicator(
+        value: (percent / 100).clamp(0.0, 1.0),
+        minHeight: 6,
+        backgroundColor: const Color(0xFF111B2B),
+        valueColor: AlwaysStoppedAnimation<Color>(
+          Colors.tealAccent.withValues(alpha: 0.8),
+        ),
+      ),
+    );
+  }
+}
+
 class _ProcessRow extends StatelessWidget {
   const _ProcessRow({required this.process});
 
@@ -2104,6 +2484,35 @@ class _InterfaceBadgeBar extends StatelessWidget {
           .toList(growable: false),
     );
   }
+}
+
+TwinInterfaceStats? _primaryInterface(TwinHost host) {
+  for (final iface in host.diagnostics.interfaces) {
+    if (iface.isUp != false) {
+      return iface;
+    }
+  }
+  return host.diagnostics.interfaces.isNotEmpty
+      ? host.diagnostics.interfaces.first
+      : null;
+}
+
+String _formatInterfaceDescriptor(TwinHost host, bool isSource) {
+  final iface = _primaryInterface(host);
+  final name = iface?.name ?? (isSource ? 'SOURCE' : 'TARGET');
+  final speed = _formatInterfaceSpeed(iface);
+  return '${host.displayName} / $name · $speed';
+}
+
+String _formatInterfaceSpeed(TwinInterfaceStats? iface) {
+  final speed = iface?.speedMbps;
+  if (speed == null || !speed.isFinite || speed <= 0) {
+    return 'N/A';
+  }
+  if (speed >= 1000) {
+    return '${(speed / 1000).toStringAsFixed(1)} Gbps';
+  }
+  return '${speed.toStringAsFixed(0)} Mbps';
 }
 
 class _HostChipRail extends StatelessWidget {
@@ -2693,6 +3102,7 @@ class _TwinScenePainter extends CustomPainter {
     required this.selectedHost,
     required this.heatMax,
     required this.cameraFocus,
+    required this.linkPulse,
   });
 
   final TwinStateFrame frame;
@@ -2700,6 +3110,7 @@ class _TwinScenePainter extends CustomPainter {
   final String? selectedHost;
   final double heatMax;
   final TwinPosition cameraFocus;
+  final double linkPulse;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2762,27 +3173,102 @@ class _TwinScenePainter extends CustomPainter {
         cameraFocus,
       );
 
-      final double utilization = link.utilization.clamp(0.0, 1.0).toDouble();
+      final controlPoint = Offset(
+        (sourcePoint.dx + targetPoint.dx) / 2,
+        math.min(sourcePoint.dy, targetPoint.dy) - 40,
+      );
+
+      final capacity = link.capacityGbps ?? 0;
+      final measured = link.throughputGbps;
+      final utilization = capacity > 0
+          ? (measured / capacity).clamp(0.0, 1.0)
+          : link.utilization.clamp(0.0, 1.0);
+      final pulse = 0.25 + 0.75 * linkPulse;
       final color = Color.lerp(
         Colors.tealAccent,
         Colors.deepOrangeAccent,
         utilization,
       )!;
 
-      final paint = Paint()
-        ..color = color.withValues(alpha: 0.65)
-        ..strokeWidth = 2 + utilization * 3
-        ..style = PaintingStyle.stroke;
       final path = Path()
         ..moveTo(sourcePoint.dx, sourcePoint.dy)
         ..quadraticBezierTo(
-          (sourcePoint.dx + targetPoint.dx) / 2,
-          math.min(sourcePoint.dy, targetPoint.dy) - 32,
+          controlPoint.dx,
+          controlPoint.dy,
           targetPoint.dx,
           targetPoint.dy,
         );
 
+      final paint = Paint()
+        ..shader = ui.Gradient.linear(sourcePoint, targetPoint, [
+          color.withValues(alpha: 0.25),
+          color.withValues(alpha: 0.9),
+        ])
+        ..strokeWidth = 2 + utilization * 3 + pulse
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4);
+
       canvas.drawPath(path, paint);
+
+      final metrics = path.computeMetrics();
+      for (final metric in metrics) {
+        final tangent = metric.getTangentForOffset(
+          metric.length * (0.15 + linkPulse * 0.7),
+        );
+        if (tangent != null) {
+          final vector = tangent.vector;
+          final magnitude = vector.distance;
+          if (magnitude > 0.001) {
+            final dir = Offset(vector.dx / magnitude, vector.dy / magnitude);
+            final length = 10 + utilization * 6;
+            final tip = tangent.position;
+            final base = tip - dir * length;
+            final perp = Offset(-dir.dy, dir.dx) * (length / 3);
+            final arrow = Path()
+              ..moveTo(tip.dx, tip.dy)
+              ..lineTo(base.dx + perp.dx, base.dy + perp.dy)
+              ..lineTo(base.dx - perp.dx, base.dy - perp.dy)
+              ..close();
+            canvas.drawPath(
+              arrow,
+              Paint()
+                ..color = Colors.white.withValues(alpha: 0.9)
+                ..style = PaintingStyle.fill,
+            );
+          }
+          break;
+        }
+      }
+
+      final midPoint = _quadraticPoint(
+        sourcePoint,
+        controlPoint,
+        targetPoint,
+        0.5,
+      );
+      final sourceDescriptor = _formatInterfaceDescriptor(source, true);
+      final targetDescriptor = _formatInterfaceDescriptor(target, false);
+      final bandwidthLabel = capacity > 0
+          ? '${measured.toStringAsFixed(2)} / ${capacity.toStringAsFixed(1)} Gbps'
+          : '${measured.toStringAsFixed(2)} Gbps';
+      final utilizationLabel =
+          '${(utilization * 100).clamp(0, 100).toStringAsFixed(0)}% 사용';
+      final linkLabel = TextPainter(
+        text: TextSpan(
+          text:
+              '$sourceDescriptor → $targetDescriptor\n$bandwidthLabel · $utilizationLabel',
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      )..layout(maxWidth: 320);
+
+      linkLabel.paint(canvas, midPoint + const Offset(-62, -30));
     }
   }
 
@@ -2914,7 +3400,8 @@ class _TwinScenePainter extends CustomPainter {
       oldDelegate.mode != mode ||
       oldDelegate.selectedHost != selectedHost ||
       oldDelegate.heatMax != heatMax ||
-      oldDelegate.cameraFocus != cameraFocus;
+      oldDelegate.cameraFocus != cameraFocus ||
+      oldDelegate.linkPulse != linkPulse;
 }
 
 double twinScaleFactor(TwinStateFrame frame, Size size) {
@@ -2937,6 +3424,13 @@ Offset twinProjectPoint(
   final adjusted = position.subtract(focus);
   final x = center.dx + adjusted.x * scale;
   final y = center.dy + adjusted.z * scale - adjusted.y * 0.8;
+  return Offset(x, y);
+}
+
+Offset _quadraticPoint(Offset p0, Offset p1, Offset p2, double t) {
+  final omt = 1 - t;
+  final x = omt * omt * p0.dx + 2 * omt * t * p1.dx + t * t * p2.dx;
+  final y = omt * omt * p0.dy + 2 * omt * t * p1.dy + t * t * p2.dy;
   return Offset(x, y);
 }
 

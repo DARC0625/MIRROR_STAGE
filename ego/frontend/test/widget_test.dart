@@ -11,15 +11,15 @@ import 'package:mirror_stage_ego/core/services/twin_channel.dart';
 import 'package:mirror_stage_ego/main.dart';
 
 void main() {
-  testWidgets('Digital twin shell renders status chips', (WidgetTester tester) async {
+  testWidgets('Digital twin shell renders status chips', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
-      MirrorStageApp(
-        channel: TwinChannel(connectImmediately: false),
-      ),
+      MirrorStageApp(channel: TwinChannel(connectImmediately: false)),
     );
 
-    expect(find.text('MIRROR STAGE'), findsOneWidget);
+    expect(find.text('TACTICAL OPERATIONS'), findsOneWidget);
     expect(find.textContaining('내부망'), findsOneWidget);
-    expect(find.textContaining('온라인 호스트'), findsOneWidget);
+    expect(find.textContaining('온라인 노드'), findsOneWidget);
   });
 }
