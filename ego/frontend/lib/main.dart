@@ -235,23 +235,6 @@ class _SidebarState extends State<_Sidebar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
-    final statusChips = [
-      _StatusChip(label: '내부망', value: '10.0.0.0/24'),
-      _StatusChip(
-        label: '온라인',
-        value: '${widget.frame.onlineHosts}/${widget.frame.totalHosts}',
-      ),
-      _StatusChip(
-        label: 'CPU',
-        value: '${widget.frame.averageCpuLoad.toStringAsFixed(1)}%',
-      ),
-      _StatusChip(
-        label: '메모리',
-        value: widget.frame.totalMemoryCapacityGb > 0
-            ? '${widget.frame.totalMemoryUsedGb.toStringAsFixed(1)}/${widget.frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
-            : '${widget.frame.averageMemoryLoad.toStringAsFixed(1)}%',
-      ),
-    ];
 
     final pages = _buildPages();
 
@@ -280,19 +263,19 @@ class _SidebarState extends State<_Sidebar> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Wrap(spacing: 8, runSpacing: 8, children: statusChips),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           Expanded(
-            child: PageView.builder(
-              controller: _controller,
-              physics: const BouncingScrollPhysics(),
-              clipBehavior: Clip.none,
-              itemCount: pages.length,
-              onPageChanged: (value) => setState(() => _currentPage = value),
-              itemBuilder: (context, index) => Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: pages[index],
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: PageView.builder(
+                controller: _controller,
+                physics: const BouncingScrollPhysics(),
+                itemCount: pages.length,
+                onPageChanged: (value) => setState(() => _currentPage = value),
+                itemBuilder: (context, index) => Padding(
+                  padding: const EdgeInsets.only(right: 2, left: 2, bottom: 8),
+                  child: pages[index],
+                ),
               ),
             ),
           ),
@@ -520,6 +503,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
   late final AnimationController _cameraController;
   late final AnimationController _linkPulseController;
   late final Animation<double> _linkPulseAnimation;
+  late final Listenable _stageTicker;
   TwinPosition _cameraFrom = TwinPosition.zero;
   TwinPosition _cameraTo = TwinPosition.zero;
 
@@ -535,12 +519,13 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
 
     _linkPulseController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(milliseconds: 1600),
     )..repeat(reverse: true);
     _linkPulseAnimation = CurvedAnimation(
       parent: _linkPulseController,
       curve: Curves.easeInOutSine,
     );
+    _stageTicker = Listenable.merge([_cameraController, _linkPulseController]);
   }
 
   @override
@@ -582,7 +567,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
     return LayoutBuilder(
       builder: (context, constraints) {
         return AnimatedBuilder(
-          animation: _cameraController,
+          animation: _stageTicker,
           builder: (context, _) {
             final focus = _currentCameraFocus;
             return Stack(
@@ -797,42 +782,6 @@ class _GaugePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _GaugePainter oldDelegate) =>
       oldDelegate.normalized != normalized || oldDelegate.color != color;
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(
-      backgroundColor: const Color(0xFF0C121E),
-      labelPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      side: const BorderSide(color: Color(0xFF1B2333)),
-      label: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.tealAccent,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _SidebarOverviewCard extends StatelessWidget {

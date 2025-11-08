@@ -19,7 +19,10 @@ void main() {
     );
 
     expect(find.text('작전 콘솔'), findsOneWidget);
-    expect(find.textContaining('내부망'), findsWidgets);
-    expect(find.textContaining('온라인'), findsWidgets);
+    expect(
+      find.textContaining('노드를 선택하면 실시간 텔레메트리를 확인할 수 있습니다.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('노드를 선택하면 시스템 상태가 표시됩니다.'), findsOneWidget);
   });
 }
