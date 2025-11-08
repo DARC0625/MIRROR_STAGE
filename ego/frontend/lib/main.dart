@@ -790,19 +790,16 @@ class _SidebarOverviewCard extends StatelessWidget {
         ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
         : null;
 
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '전역 메트릭',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '전역 메트릭',
+          style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Row(
             children: [
               Expanded(
                 child: _AnalogGauge(
@@ -819,10 +816,10 @@ class _SidebarOverviewCard extends StatelessWidget {
                   size: gaugeSize,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: _AnalogGauge(
-                  label: '메모리 사용률',
+                  label: '메모리',
                   value: memUtil,
                   maxValue: 100,
                   units: '%',
@@ -835,8 +832,8 @@ class _SidebarOverviewCard extends StatelessWidget {
               ),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -2051,6 +2048,27 @@ class _GlassTile extends StatelessWidget {
   }
 }
 
+class _DockPanel extends StatelessWidget {
+  const _DockPanel({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0x110C1A2A),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0x221B2333)),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
 class _LinkStatusPanel extends StatelessWidget {
   const _LinkStatusPanel({
     required this.title,
@@ -2679,11 +2697,8 @@ Widget _buildGlobalMetricsWidget(
   final frame = data.frame;
   final available = data.constraints.maxHeight;
   final gaugeSize = math.max(70.0, math.min(110.0, (available - 32) / 2));
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: _SidebarOverviewCard(frame: frame, gaugeSize: gaugeSize),
-    ),
+  return _DockPanel(
+    child: _SidebarOverviewCard(frame: frame, gaugeSize: gaugeSize),
   );
 }
 
@@ -2694,17 +2709,14 @@ Widget _buildGlobalLinkWidget(BuildContext context, _WidgetBuildContext data) {
   final utilization = capacity > 0
       ? (throughput / capacity).clamp(0.0, 1.0)
       : null;
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: _LinkStatusPanel(
-        title: '클러스터 링크',
-        primaryValue: '${throughput.toStringAsFixed(2)} Gbps',
-        caption: capacity > 0
-            ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
-            : '용량 정보 없음',
-        utilization: utilization,
-      ),
+  return _DockPanel(
+    child: _LinkStatusPanel(
+      title: '클러스터 링크',
+      primaryValue: '${throughput.toStringAsFixed(2)} Gbps',
+      caption: capacity > 0
+          ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
+          : '용량 정보 없음',
+      utilization: utilization,
     ),
   );
 }
@@ -2718,19 +2730,14 @@ Widget _buildGlobalTemperatureWidget(
   final avgTemp = frame.averageCpuTemperature > 0
       ? frame.averageCpuTemperature
       : null;
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: _TemperaturePanel(
-        title: '클러스터 온도',
-        primaryLabel: maxTemp != null
-            ? '${maxTemp.toStringAsFixed(1)}℃'
-            : 'N/A',
-        secondaryLabel: avgTemp != null
-            ? '평균 ${avgTemp.toStringAsFixed(1)}℃'
-            : '센서 없음',
-        progress: maxTemp != null ? (maxTemp / 110).clamp(0.0, 1.0) : null,
-      ),
+  return _DockPanel(
+    child: _TemperaturePanel(
+      title: '클러스터 온도',
+      primaryLabel: maxTemp != null ? '${maxTemp.toStringAsFixed(1)}℃' : 'N/A',
+      secondaryLabel: avgTemp != null
+          ? '평균 ${avgTemp.toStringAsFixed(1)}℃'
+          : '센서 없음',
+      progress: maxTemp != null ? (maxTemp / 110).clamp(0.0, 1.0) : null,
     ),
   );
 }
@@ -2738,36 +2745,28 @@ Widget _buildGlobalTemperatureWidget(
 Widget _buildCommandConsoleWidget(
   BuildContext context,
   _WidgetBuildContext data,
-) {
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: _CommandConsoleCard(
-        frame: data.frame,
-        selectedHost: data.selectedHost,
-      ),
-    ),
-  );
-}
+) => _DockPanel(
+  child: _CommandConsoleCard(
+    frame: data.frame,
+    selectedHost: data.selectedHost,
+  ),
+);
 
 Widget _buildTelemetryWidget(BuildContext context, _WidgetBuildContext data) {
   final host = data.selectedHost;
   if (host == null) {
     return const _DockHostGuard(message: '노드를 선택하여 연결 상태를 확인하세요.');
   }
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _OverlayHeader(host: host, theme: Theme.of(context).textTheme),
-          const SizedBox(height: 10),
-          Expanded(
-            child: _RealtimeTelemetryCard(host: host, samples: data.samples),
-          ),
-        ],
-      ),
+  return _DockPanel(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _OverlayHeader(host: host, theme: Theme.of(context).textTheme),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _RealtimeTelemetryCard(host: host, samples: data.samples),
+        ),
+      ],
     ),
   );
 }
@@ -2783,19 +2782,16 @@ Widget _buildHostLinkWidget(BuildContext context, _WidgetBuildContext data) {
   final utilization = capacity != null && capacity > 0
       ? (throughput / capacity).clamp(0.0, 1.0)
       : null;
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: _LinkStatusPanel(
-        title: host.displayName,
-        primaryValue: throughput > 0
-            ? '${throughput.toStringAsFixed(2)} Gbps'
-            : '데이터 없음',
-        caption: capacity != null
-            ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
-            : '용량 정보 없음',
-        utilization: utilization,
-      ),
+  return _DockPanel(
+    child: _LinkStatusPanel(
+      title: host.displayName,
+      primaryValue: throughput > 0
+          ? '${throughput.toStringAsFixed(2)} Gbps'
+          : '데이터 없음',
+      caption: capacity != null
+          ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
+          : '용량 정보 없음',
+      utilization: utilization,
     ),
   );
 }
@@ -2823,17 +2819,14 @@ Widget _buildHostTemperatureWidget(
     }
     return '센서 없음';
   }();
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: _TemperaturePanel(
-        title: host.displayName,
-        primaryLabel: primary != null
-            ? '${primary.toStringAsFixed(1)}℃'
-            : '데이터 없음',
-        secondaryLabel: secondary,
-        progress: primary != null ? (primary / 110).clamp(0.0, 1.0) : null,
-      ),
+  return _DockPanel(
+    child: _TemperaturePanel(
+      title: host.displayName,
+      primaryLabel: primary != null
+          ? '${primary.toStringAsFixed(1)}℃'
+          : '데이터 없음',
+      secondaryLabel: secondary,
+      progress: primary != null ? (primary / 110).clamp(0.0, 1.0) : null,
     ),
   );
 }
@@ -2843,12 +2836,7 @@ Widget _buildProcessWidget(BuildContext context, _WidgetBuildContext data) {
   if (host == null) {
     return const _DockHostGuard(message: '대상을 선택하면 프로세스를 보여줍니다.');
   }
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: _ProcessPanel(host: host),
-    ),
-  );
+  return _DockPanel(child: _ProcessPanel(host: host));
 }
 
 Widget _buildNetworkWidget(BuildContext context, _WidgetBuildContext data) {
@@ -2856,12 +2844,7 @@ Widget _buildNetworkWidget(BuildContext context, _WidgetBuildContext data) {
   if (host == null) {
     return const _DockHostGuard(message: '네트워크 인터페이스는 선택된 노드 기준으로 표시됩니다.');
   }
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: _InterfacePanel(host: host),
-    ),
-  );
+  return _DockPanel(child: _InterfacePanel(host: host));
 }
 
 Widget _buildStorageWidget(BuildContext context, _WidgetBuildContext data) {
@@ -2869,12 +2852,7 @@ Widget _buildStorageWidget(BuildContext context, _WidgetBuildContext data) {
   if (host == null) {
     return const _DockHostGuard(message: '스토리지 사용량을 보려면 노드를 선택하세요.');
   }
-  return SizedBox.expand(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: _StoragePanel(host: host),
-    ),
-  );
+  return _DockPanel(child: _StoragePanel(host: host));
 }
 
 class _WidgetPlacementSeed {
@@ -3342,7 +3320,7 @@ class _DockedWidgetTile extends StatelessWidget {
           children: [
             Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 34, 20, 20),
+                padding: const EdgeInsets.fromLTRB(14, 32, 14, 14),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final data = _WidgetBuildContext(
