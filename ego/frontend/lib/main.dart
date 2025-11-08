@@ -2614,46 +2614,46 @@ class _TwinScenePainter extends CustomPainter {
           targetPoint.dy,
         );
 
-      final paint = Paint()
-        ..shader = ui.Gradient.linear(sourcePoint, targetPoint, [
-          color.withValues(alpha: 0.25),
-          color.withValues(alpha: 0.9),
-        ])
-        ..strokeWidth = 2 + utilization * 3 + pulse
+      final baseGlow = Paint()
+        ..color = color.withValues(alpha: 0.09)
+        ..strokeWidth = 10 + utilization * 6
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
-        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4);
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 12);
+      canvas.drawPath(path, baseGlow);
+
+      final paint = Paint()
+        ..shader = ui.Gradient.linear(sourcePoint, targetPoint, [
+          color.withValues(alpha: 0.2),
+          color.withValues(alpha: 0.95),
+        ])
+        ..strokeWidth = 2 + utilization * 4 + pulse
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
 
       canvas.drawPath(path, paint);
 
       final metrics = path.computeMetrics();
       for (final metric in metrics) {
-        final tangent = metric.getTangentForOffset(
-          metric.length * (0.15 + linkPulse * 0.7),
+        final window = (46 + utilization * 70).clamp(24.0, metric.length * 0.8);
+        final offset = (metric.length - window) * (0.1 + linkPulse * 0.8);
+        final highlight = metric.extractPath(
+          offset,
+          math.min(metric.length, offset + window),
         );
-        if (tangent != null) {
-          final vector = tangent.vector;
-          final magnitude = vector.distance;
-          if (magnitude > 0.001) {
-            final dir = Offset(vector.dx / magnitude, vector.dy / magnitude);
-            final length = 10 + utilization * 6;
-            final tip = tangent.position;
-            final base = tip - dir * length;
-            final perp = Offset(-dir.dy, dir.dx) * (length / 3);
-            final arrow = Path()
-              ..moveTo(tip.dx, tip.dy)
-              ..lineTo(base.dx + perp.dx, base.dy + perp.dy)
-              ..lineTo(base.dx - perp.dx, base.dy - perp.dy)
-              ..close();
-            canvas.drawPath(
-              arrow,
-              Paint()
-                ..color = Colors.white.withValues(alpha: 0.9)
-                ..style = PaintingStyle.fill,
-            );
-          }
-          break;
-        }
+        final highlightPaint = Paint()
+          ..shader = ui.Gradient.linear(
+            highlight.getBounds().topLeft,
+            highlight.getBounds().bottomRight,
+            [
+              Colors.white.withValues(alpha: 0.12),
+              Colors.white.withValues(alpha: 0.85),
+            ],
+          )
+          ..strokeWidth = paint.strokeWidth + 1.5
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round;
+        canvas.drawPath(highlight, highlightPaint);
       }
 
       final midPoint = _quadraticPoint(
