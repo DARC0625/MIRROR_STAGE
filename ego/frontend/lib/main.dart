@@ -47,6 +47,46 @@ class MirrorStageApp extends StatelessWidget {
   }
 }
 
+void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
+  const dash = 10.0;
+  const gap = 6.0;
+  for (final metric in path.computeMetrics()) {
+    double distance = 0;
+    while (distance < metric.length) {
+      final next = math.min(metric.length, distance + dash);
+      final segment = metric.extractPath(distance, next);
+      canvas.drawPath(segment, paint);
+      distance = next + gap;
+    }
+  }
+}
+
+void _drawArrowHead(
+  Canvas canvas,
+  Offset position,
+  double direction,
+  Color color,
+) {
+  const size = 8.0;
+  final path = Path()
+    ..moveTo(position.dx, position.dy)
+    ..lineTo(
+      position.dx - size * math.cos(direction - 0.4),
+      position.dy - size * math.sin(direction - 0.4),
+    )
+    ..lineTo(
+      position.dx - size * math.cos(direction + 0.4),
+      position.dy - size * math.sin(direction + 0.4),
+    )
+    ..close();
+  canvas.drawPath(
+    path,
+    Paint()
+      ..color = color.withValues(alpha: 0.9)
+      ..style = PaintingStyle.fill,
+  );
+}
+
 class DigitalTwinShell extends StatefulWidget {
   const DigitalTwinShell({super.key, this.channel});
 
@@ -149,7 +189,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(width: 320, child: leftPanel),
+                      SizedBox(width: 360, child: leftPanel),
                       Expanded(child: stage),
                       SizedBox(width: 360, child: rightPanel),
                     ],
@@ -253,7 +293,7 @@ class _SidebarState extends State<_Sidebar> {
           Row(
             children: [
               Text(
-                '작전 콘솔',
+                'MIRROR STAGE OPS',
                 style: theme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const Spacer(),
@@ -266,14 +306,15 @@ class _SidebarState extends State<_Sidebar> {
           const SizedBox(height: 12),
           Expanded(
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(24),
               child: PageView.builder(
                 controller: _controller,
                 physics: const BouncingScrollPhysics(),
+                padEnds: false,
                 itemCount: pages.length,
                 onPageChanged: (value) => setState(() => _currentPage = value),
                 itemBuilder: (context, index) => Padding(
-                  padding: const EdgeInsets.only(right: 2, left: 2, bottom: 8),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: pages[index],
                 ),
               ),
@@ -2603,6 +2644,24 @@ class _TwinScenePainter extends CustomPainter {
           targetPoint.dy,
         );
 
+      if (!(source.status == TwinHostStatus.online &&
+          target.status == TwinHostStatus.online)) {
+        final offlinePaint = Paint()
+          ..color = Colors.redAccent.withValues(alpha: 0.6)
+          ..strokeWidth = 2.4
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round;
+        _drawDashedPath(canvas, path, offlinePaint);
+        continue;
+      }
+
+      final slackPaint = Paint()
+        ..color = Colors.tealAccent.withValues(alpha: (1 - utilization) * 0.12)
+        ..strokeWidth = 8
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+      canvas.drawPath(path, slackPaint);
+
       final baseGlow = Paint()
         ..color = color.withValues(alpha: 0.09)
         ..strokeWidth = 10 + utilization * 6
@@ -2625,10 +2684,11 @@ class _TwinScenePainter extends CustomPainter {
       final metrics = path.computeMetrics();
       for (final metric in metrics) {
         final window = (46 + utilization * 70).clamp(24.0, metric.length * 0.8);
-        final offset = (metric.length - window) * (0.1 + linkPulse * 0.8);
+        final forwardOffset =
+            (metric.length - window) * (0.1 + linkPulse * 0.8);
         final highlight = metric.extractPath(
-          offset,
-          math.min(metric.length, offset + window),
+          forwardOffset,
+          math.min(metric.length, forwardOffset + window),
         );
         final highlightPaint = Paint()
           ..shader = ui.Gradient.linear(
@@ -2639,10 +2699,42 @@ class _TwinScenePainter extends CustomPainter {
               Colors.white.withValues(alpha: 0.85),
             ],
           )
-          ..strokeWidth = paint.strokeWidth + 1.5
+          ..strokeWidth = paint.strokeWidth + 1.2
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round;
         canvas.drawPath(highlight, highlightPaint);
+
+        final reverseOffset =
+            (metric.length - window) * (0.2 + (1 - linkPulse) * 0.7);
+        final reverse = metric.extractPath(
+          reverseOffset,
+          math.min(metric.length, reverseOffset + window),
+        );
+        final reversePaint = Paint()
+          ..shader = ui.Gradient.linear(
+            reverse.getBounds().bottomRight,
+            reverse.getBounds().topLeft,
+            [
+              Colors.white.withValues(alpha: 0.08),
+              color.withValues(alpha: 0.8),
+            ],
+          )
+          ..strokeWidth = paint.strokeWidth + 0.8
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round;
+        canvas.drawPath(reverse, reversePaint);
+
+        final tangent = metric.getTangentForOffset(
+          forwardOffset + window * 0.9,
+        );
+        if (tangent != null) {
+          _drawArrowHead(
+            canvas,
+            tangent.position,
+            tangent.vector.direction,
+            color,
+          );
+        }
       }
 
       final midPoint = _quadraticPoint(
