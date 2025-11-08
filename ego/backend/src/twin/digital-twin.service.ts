@@ -101,10 +101,14 @@ export class DigitalTwinService {
 
     const capacityGbps = this.extractCapacityGbps(sample, current.netCapacityGbps);
     const throughputGbps = this.computeThroughputGbps(current, sample, sampleTimestamp);
+    const normalizedThroughput = this.normalizeThroughput(
+      throughputGbps ?? current.metrics.netThroughputGbps,
+      metrics.cpuLoad,
+    );
     const diagnostics = this.extractDiagnostics(sample, current.diagnostics);
     const isSynthetic = this.detectSynthetic(sample) || current.isSynthetic || false;
 
-    metrics.netThroughputGbps = throughputGbps ?? current.metrics.netThroughputGbps ?? null;
+    metrics.netThroughputGbps = normalizedThroughput;
     metrics.netCapacityGbps = capacityGbps ?? metrics.netCapacityGbps ?? null;
     metrics.cpuPerCore = diagnostics?.cpuPerCore ?? current.metrics.cpuPerCore ?? null;
     metrics.swapUsedPercent = diagnostics?.swapUsedPercent ?? current.metrics.swapUsedPercent ?? null;
@@ -258,15 +262,7 @@ export class DigitalTwinService {
   }
 
   private estimateThroughput(metrics: HostMetricsSummary): number {
-    if (metrics.netThroughputGbps != null) {
-      return Math.max(0, metrics.netThroughputGbps);
-    }
-
-    const base = metrics.netBytesTx ?? metrics.netBytesRx ?? 0;
-    if (base > 0) {
-      return Math.max(0.01, (base * 8) / 1_000_000_000);
-    }
-    return Math.max(0.05, (metrics.cpuLoad / 100) * 2);
+    return this.normalizeThroughput(metrics.netThroughputGbps, metrics.cpuLoad);
   }
 
   private extractDiagnostics(sample: MetricSample, previous?: HostDiagnosticsSnapshot): HostDiagnosticsSnapshot | undefined {
@@ -559,6 +555,14 @@ export class DigitalTwinService {
     }
 
     return null;
+  }
+
+  private normalizeThroughput(raw: number | null | undefined, cpuLoad: number): number {
+    if (raw != null && Number.isFinite(raw)) {
+      return Math.max(0, Number(raw.toFixed(3)));
+    }
+    const fallback = Math.max(0.05, (cpuLoad / 100) * 2);
+    return Number(fallback.toFixed(3));
   }
 
   private ensureIp(hostname: string, candidate?: string): string {

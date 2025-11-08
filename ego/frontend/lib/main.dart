@@ -786,9 +786,7 @@ class _SidebarOverviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final avgCpu = frame.averageCpuLoad.clamp(0, 100).toDouble();
     final memUtil = frame.memoryUtilizationPercent.clamp(0, 100).toDouble();
-    final memCaption = frame.totalMemoryCapacityGb > 0
-        ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
-        : null;
+    final String? memCaption = null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2384,16 +2382,74 @@ String _formatInterfaceSpeed(TwinInterfaceStats? iface) {
   return '${speed.toStringAsFixed(0)} Mbps';
 }
 
-class _ProcessPanel extends StatelessWidget {
+class _ProcessPanel extends StatefulWidget {
   const _ProcessPanel({required this.host});
 
   final TwinHost host;
 
   @override
-  Widget build(BuildContext context) {
-    final processes = host.diagnostics.topProcesses
-        .take(6)
+  State<_ProcessPanel> createState() => _ProcessPanelState();
+}
+
+class _ProcessPanelState extends State<_ProcessPanel> {
+  static const _pageSize = 3;
+  static const _rowHeight = 40.0;
+  late final PageController _controller;
+  int _pageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProcessPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final pageCount = _pages.length;
+    if (_pageIndex >= pageCount && pageCount > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _controller.jumpToPage(0);
+        setState(() => _pageIndex = 0);
+      });
+    }
+  }
+
+  List<List<TwinProcessSample>> get _pages {
+    final processes = widget.host.diagnostics.topProcesses
+        .take(12)
         .toList(growable: false);
+    return _chunkList(processes, _pageSize);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = _pages;
+    if (pages.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Text(
+            '상위 프로세스',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text('데이터 없음', style: TextStyle(color: Colors.white38, fontSize: 12)),
+        ],
+      );
+    }
+
+    const panelHeight = _pageSize * _rowHeight;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2401,14 +2457,29 @@ class _ProcessPanel extends StatelessWidget {
           '상위 프로세스',
           style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
         ),
-        const SizedBox(height: 8),
-        if (processes.isEmpty)
-          const Text(
-            '데이터 없음',
-            style: TextStyle(color: Colors.white38, fontSize: 12),
-          )
-        else
-          ...processes.map((process) => _ProcessRow(process: process)),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: panelHeight,
+          child: PageView.builder(
+            controller: _controller,
+            physics: const PageScrollPhysics(),
+            itemCount: pages.length,
+            onPageChanged: (value) => setState(() => _pageIndex = value),
+            itemBuilder: (context, index) {
+              final page = pages[index];
+              return Column(
+                children: page
+                    .map((process) => _ProcessRow(process: process))
+                    .toList(growable: false),
+              );
+            },
+          ),
+        ),
+        if (pages.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _PageDots(count: pages.length, index: _pageIndex),
+          ),
       ],
     );
   }
@@ -2444,14 +2515,72 @@ class _InterfacePanel extends StatelessWidget {
   }
 }
 
-class _StoragePanel extends StatelessWidget {
+class _StoragePanel extends StatefulWidget {
   const _StoragePanel({required this.host});
 
   final TwinHost host;
 
   @override
+  State<_StoragePanel> createState() => _StoragePanelState();
+}
+
+class _StoragePanelState extends State<_StoragePanel> {
+  static const _pageSize = 2;
+  static const _rowHeight = 54.0;
+  late final PageController _controller;
+  int _pageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  List<List<TwinDiskUsage>> get _pages {
+    final disks = widget.host.diagnostics.disks.take(8).toList(growable: false);
+    return _chunkList(disks, _pageSize);
+  }
+
+  @override
+  void didUpdateWidget(covariant _StoragePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final pageCount = _pages.length;
+    if (_pageIndex >= pageCount && pageCount > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _controller.jumpToPage(0);
+        setState(() => _pageIndex = 0);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final disks = host.diagnostics.disks.take(4).toList(growable: false);
+    final pages = _pages;
+    if (pages.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Text(
+            '스토리지',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text('데이터 없음', style: TextStyle(color: Colors.white38, fontSize: 12)),
+        ],
+      );
+    }
+
+    const panelHeight = _pageSize * _rowHeight;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2459,14 +2588,28 @@ class _StoragePanel extends StatelessWidget {
           '스토리지',
           style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
         ),
-        const SizedBox(height: 8),
-        if (disks.isEmpty)
-          const Text(
-            '데이터 없음',
-            style: TextStyle(color: Colors.white38, fontSize: 12),
-          )
-        else
-          ...disks.map((disk) => _DiskUsageBar(disk: disk)),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: panelHeight,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: pages.length,
+            onPageChanged: (value) => setState(() => _pageIndex = value),
+            itemBuilder: (context, index) {
+              final page = pages[index];
+              return Column(
+                children: page
+                    .map((disk) => _DiskUsageBar(disk: disk))
+                    .toList(growable: false),
+              );
+            },
+          ),
+        ),
+        if (pages.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _PageDots(count: pages.length, index: _pageIndex),
+          ),
       ],
     );
   }
@@ -3379,6 +3522,46 @@ class _DockHostGuard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PageDots extends StatelessWidget {
+  const _PageDots({required this.count, required this.index});
+
+  final int count;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(count, (i) {
+        final isActive = i == index;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: isActive ? 12 : 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: isActive
+                ? Colors.tealAccent
+                : Colors.white.withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+List<List<T>> _chunkList<T>(List<T> items, int size) {
+  if (items.isEmpty || size <= 0) {
+    return <List<T>>[];
+  }
+  final result = <List<T>>[];
+  for (var i = 0; i < items.length; i += size) {
+    result.add(items.sublist(i, math.min(i + size, items.length)));
+  }
+  return result;
 }
 
 class _WidgetPaletteOverlay extends StatelessWidget {
