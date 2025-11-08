@@ -11,6 +11,17 @@ import 'core/services/twin_channel.dart';
 
 enum TwinViewportMode { topology, heatmap }
 
+enum SidebarWing { left, right }
+
+enum SidebarWidgetType {
+  globalMetrics,
+  commandConsole,
+  telemetry,
+  processes,
+  network,
+  storage,
+}
+
 void main() {
   runApp(const MirrorStageApp());
 }
@@ -65,6 +76,8 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
   TwinStateFrame? _lastFrame;
   final TwinViewportMode _viewportMode = TwinViewportMode.topology;
   String? _selectedHostName;
+  late final _WidgetDockController _dockController;
+  bool _showWidgetPalette = false;
 
   @override
   void initState() {
@@ -72,6 +85,9 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     _ownsChannel = widget.channel == null;
     _channel = widget.channel ?? TwinChannel();
     _stream = _channel.stream();
+    _dockController = _WidgetDockController(
+      initialPlacements: _defaultDockPlacements,
+    );
   }
 
   @override
@@ -79,6 +95,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     if (_ownsChannel) {
       _channel.dispose();
     }
+    _dockController.dispose();
     super.dispose();
   }
 
@@ -119,60 +136,81 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
 
         return Scaffold(
           backgroundColor: const Color(0xFF05080D),
-          body: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth > 1200;
-                final stage = _TwinStage(
-                  frame: frame,
-                  mode: _viewportMode,
-                  selectedHost: selectedHost,
-                  heatMax: heatMax,
-                  onSelectHost: _selectHost,
-                  onClearSelection: _clearSelection,
-                );
-                final leftPanel = _Sidebar(
-                  frame: frame,
-                  selectedHost: selectedHost,
-                );
-                final rightPanel = _StatusSidebar(
-                  frame: frame,
-                  selectedHost: selectedHost,
-                );
+          body: Stack(
+            children: [
+              SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isWide = constraints.maxWidth > 1200;
+                    final stage = _TwinStage(
+                      frame: frame,
+                      mode: _viewportMode,
+                      selectedHost: selectedHost,
+                      heatMax: heatMax,
+                      onSelectHost: _selectHost,
+                      onClearSelection: _clearSelection,
+                    );
+                    final leftPanel = _Sidebar(
+                      frame: frame,
+                      selectedHost: selectedHost,
+                      controller: _dockController,
+                      wing: SidebarWing.left,
+                      paletteOpen: _showWidgetPalette,
+                      onTogglePalette: _togglePalette,
+                    );
+                    final rightPanel = _StatusSidebar(
+                      frame: frame,
+                      selectedHost: selectedHost,
+                      controller: _dockController,
+                    );
 
-                if (isWide) {
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(width: 360, child: leftPanel),
-                      Expanded(child: stage),
-                      SizedBox(width: 360, child: rightPanel),
-                    ],
-                  );
-                }
+                    if (isWide) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(width: 360, child: leftPanel),
+                          Expanded(child: stage),
+                          SizedBox(width: 360, child: rightPanel),
+                        ],
+                      );
+                    }
 
-                return Column(
-                  children: [
-                    Expanded(child: stage),
-                    SizedBox(
-                      height: (constraints.maxHeight * 0.35).clamp(
-                        260.0,
-                        420.0,
-                      ),
-                      child: leftPanel,
-                    ),
-                    SizedBox(
-                      height: (constraints.maxHeight * 0.4).clamp(280.0, 460.0),
-                      child: rightPanel,
-                    ),
-                  ],
-                );
-              },
-            ),
+                    return Column(
+                      children: [
+                        Expanded(child: stage),
+                        SizedBox(
+                          height: (constraints.maxHeight * 0.35).clamp(
+                            260.0,
+                            420.0,
+                          ),
+                          child: leftPanel,
+                        ),
+                        SizedBox(
+                          height: (constraints.maxHeight * 0.4).clamp(
+                            280.0,
+                            460.0,
+                          ),
+                          child: rightPanel,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              if (_showWidgetPalette)
+                _WidgetPaletteOverlay(
+                  controller: _dockController,
+                  onClose: _togglePalette,
+                ),
+            ],
           ),
         );
       },
     );
+  }
+
+  void _togglePalette() {
+    setState(() => _showWidgetPalette = !_showWidgetPalette);
   }
 
   void _clearSelection() {
@@ -182,49 +220,26 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
   }
 }
 
-class _Sidebar extends StatefulWidget {
-  const _Sidebar({required this.frame, required this.selectedHost});
+class _Sidebar extends StatelessWidget {
+  const _Sidebar({
+    required this.frame,
+    required this.selectedHost,
+    required this.controller,
+    required this.wing,
+    required this.paletteOpen,
+    required this.onTogglePalette,
+  });
 
   final TwinStateFrame frame;
   final TwinHost? selectedHost;
-
-  @override
-  State<_Sidebar> createState() => _SidebarState();
-}
-
-class _SidebarState extends State<_Sidebar> {
-  late final PageController _controller;
-  int _currentPage = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = PageController();
-  }
-
-  @override
-  void didUpdateWidget(covariant _Sidebar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.selectedHost?.hostname != oldWidget.selectedHost?.hostname) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _controller.jumpToPage(0);
-        setState(() => _currentPage = 0);
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  final _WidgetDockController controller;
+  final SidebarWing wing;
+  final bool paletteOpen;
+  final VoidCallback onTogglePalette;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
-    final pages = _buildPages();
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       decoration: const BoxDecoration(
@@ -243,60 +258,98 @@ class _SidebarState extends State<_Sidebar> {
                 'MIRROR STAGE',
                 style: theme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
+              const SizedBox(width: 12),
+              _WidgetPaletteButton(
+                isActive: paletteOpen,
+                onPressed: onTogglePalette,
+              ),
             ],
           ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: PageView.builder(
-                controller: _controller,
-                physics: const PageScrollPhysics(),
-                itemCount: pages.length,
-                onPageChanged: (value) => setState(() => _currentPage = value),
-                itemBuilder: (context, index) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: SizedBox.expand(child: pages[index]),
-                ),
-              ),
+          const SizedBox(height: 18),
+          Flexible(
+            fit: FlexFit.loose,
+            child: _WidgetGridPanel(
+              wing: wing,
+              controller: controller,
+              frame: frame,
+              selectedHost: selectedHost,
+              samples: const <_MetricSample>[],
+              emptyLabel: '위젯 패널에서 원하는 모듈을 배치하세요.',
             ),
           ),
-          if (pages.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: _DotsIndicator(
-                count: pages.length,
-                index: _currentPage,
-                onSelected: (value) {
-                  if (value == _currentPage) return;
-                  setState(() => _currentPage = value);
-                  _controller.animateToPage(
-                    value,
-                    duration: const Duration(milliseconds: 320),
-                    curve: Curves.easeOutCubic,
-                  );
-                },
-              ),
-            ),
         ],
       ),
     );
   }
-
-  List<Widget> _buildPages() => [
-    _SidebarOverviewCard(frame: widget.frame),
-    _CommandConsoleCard(frame: widget.frame, selectedHost: widget.selectedHost),
-  ];
 }
 
-class _StatusSidebar extends StatelessWidget {
-  const _StatusSidebar({required this.frame, required this.selectedHost});
+class _StatusSidebar extends StatefulWidget {
+  const _StatusSidebar({
+    required this.frame,
+    required this.selectedHost,
+    required this.controller,
+  });
 
   final TwinStateFrame frame;
   final TwinHost? selectedHost;
+  final _WidgetDockController controller;
+
+  @override
+  State<_StatusSidebar> createState() => _StatusSidebarState();
+}
+
+class _StatusSidebarState extends State<_StatusSidebar> {
+  final Map<String, _MetricHistoryBuffer> _historyByHost = {};
+  final Map<String, DateTime> _lastTimestampByHost = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _ingestSample();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StatusSidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _ingestSample();
+  }
+
+  void _ingestSample() {
+    final host = widget.selectedHost;
+    if (host == null) return;
+
+    final timestamp = widget.frame.generatedAt;
+    final key = host.hostname;
+    final last = _lastTimestampByHost[key];
+    if (last != null && !timestamp.isAfter(last)) {
+      return;
+    }
+
+    final buffer = _historyByHost.putIfAbsent(key, _MetricHistoryBuffer.new);
+    final previous = buffer.latest;
+    final throughput = host.metrics.netThroughputGbps ?? previous?.throughput;
+    final temperature =
+        host.cpuTemperature ?? host.gpuTemperature ?? previous?.temperature;
+
+    buffer.add(
+      _MetricSample(
+        timestamp: timestamp,
+        cpu: host.metrics.cpuLoad,
+        memory: host.metrics.memoryUsedPercent,
+        throughput: throughput,
+        temperature: temperature,
+      ),
+    );
+    _lastTimestampByHost[key] = timestamp;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final samples = widget.selectedHost != null
+        ? _historyByHost[widget.selectedHost!.hostname]?.samples ??
+              const <_MetricSample>[]
+        : const <_MetricSample>[];
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: const BoxDecoration(
@@ -307,7 +360,16 @@ class _StatusSidebar extends StatelessWidget {
         ),
         border: Border(left: BorderSide(color: Color(0x22111B2D))),
       ),
-      child: _HostOverlay(frame: frame, host: selectedHost),
+      child: _WidgetGridPanel(
+        wing: SidebarWing.right,
+        controller: widget.controller,
+        frame: widget.frame,
+        selectedHost: widget.selectedHost,
+        samples: samples,
+        emptyLabel: widget.selectedHost == null
+            ? '노드를 선택하면 텔레메트리를 띄울 수 있습니다.'
+            : '위젯을 배치하여 정보를 구성하세요.',
+      ),
     );
   }
 }
@@ -817,47 +879,6 @@ class _SidebarOverviewCard extends StatelessWidget {
   }
 }
 
-class _DotsIndicator extends StatelessWidget {
-  const _DotsIndicator({
-    required this.count,
-    required this.index,
-    this.onSelected,
-  });
-
-  final int count;
-  final int index;
-  final ValueChanged<int>? onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(count, (i) {
-        final isActive = i == index;
-        final dot = AnimatedContainer(
-          duration: const Duration(milliseconds: 240),
-          curve: Curves.easeOutCubic,
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          width: isActive ? 18 : 8,
-          height: 8,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            color: isActive
-                ? Colors.tealAccent
-                : Colors.white.withValues(alpha: 0.25),
-          ),
-        );
-        if (onSelected == null) return dot;
-        return GestureDetector(
-          onTap: () => onSelected?.call(i),
-          behavior: HitTestBehavior.opaque,
-          child: dot,
-        );
-      }),
-    );
-  }
-}
-
 class _CommandConsoleCard extends StatefulWidget {
   const _CommandConsoleCard({required this.frame, required this.selectedHost});
 
@@ -1196,142 +1217,6 @@ class _InfoPill extends StatelessWidget {
   }
 }
 
-class _HostOverlay extends StatefulWidget {
-  const _HostOverlay({required this.frame, required this.host});
-
-  final TwinStateFrame frame;
-  final TwinHost? host;
-
-  @override
-  State<_HostOverlay> createState() => _HostOverlayState();
-}
-
-class _HostOverlayState extends State<_HostOverlay> {
-  final Map<String, _MetricHistoryBuffer> _historyByHost = {};
-  final Map<String, DateTime> _lastTimestampByHost = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _ingestSample();
-  }
-
-  @override
-  void didUpdateWidget(covariant _HostOverlay oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _ingestSample();
-  }
-
-  void _ingestSample() {
-    final host = widget.host;
-    if (host == null) {
-      return;
-    }
-
-    final timestamp = widget.frame.generatedAt;
-    final last = _lastTimestampByHost[host.hostname];
-    if (last != null && !timestamp.isAfter(last)) {
-      return;
-    }
-
-    final buffer = _historyByHost.putIfAbsent(
-      host.hostname,
-      _MetricHistoryBuffer.new,
-    );
-    final previous = buffer.latest;
-    final throughput = host.metrics.netThroughputGbps ?? previous?.throughput;
-    final temperature =
-        host.cpuTemperature ?? host.gpuTemperature ?? previous?.temperature;
-
-    buffer.add(
-      _MetricSample(
-        timestamp: timestamp,
-        cpu: host.metrics.cpuLoad,
-        memory: host.metrics.memoryUsedPercent,
-        throughput: throughput,
-        temperature: temperature,
-      ),
-    );
-    _lastTimestampByHost[host.hostname] = timestamp;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final host = widget.host;
-    final samples = host != null
-        ? _historyByHost[host.hostname]?.samples ?? const <_MetricSample>[]
-        : const <_MetricSample>[];
-
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 280),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      child: host == null
-          ? const _HostOverlayPlaceholder(key: ValueKey('empty'))
-          : _HostOverlayCard(
-              key: ValueKey(host.hostname),
-              host: host,
-              samples: samples,
-            ),
-    );
-  }
-}
-
-class _HostOverlayCard extends StatelessWidget {
-  const _HostOverlayCard({
-    super.key,
-    required this.host,
-    required this.samples,
-  });
-
-  final TwinHost host;
-  final List<_MetricSample> samples;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context).textTheme;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xF00D141F),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: const Color(0x221B2333)),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black54,
-                blurRadius: 24,
-                offset: Offset(0, 12),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _OverlayHeader(host: host, theme: theme),
-                const SizedBox(height: 16),
-                _GlassTile(
-                  child: _RealtimeTelemetryCard(host: host, samples: samples),
-                ),
-                const SizedBox(height: 14),
-                _GlassTile(child: _ProcessPanel(host: host)),
-                const SizedBox(height: 14),
-                _GlassTile(child: _InterfacePanel(host: host)),
-                const SizedBox(height: 14),
-                _GlassTile(child: _StoragePanel(host: host)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _HostChipRail extends StatelessWidget {
   const _HostChipRail({
     required this.hosts,
@@ -1468,27 +1353,6 @@ class _HostChip extends StatelessWidget {
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _HostOverlayPlaceholder extends StatelessWidget {
-  const _HostOverlayPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0x221B2333)),
-        color: const Color(0x110D141F),
-      ),
-      alignment: Alignment.center,
-      child: const Text(
-        '노드를 선택하면 시스템 상태가 표시됩니다.',
-        style: TextStyle(color: Colors.white38),
-        textAlign: TextAlign.center,
       ),
     );
   }
@@ -2711,27 +2575,22 @@ class _ProcessPanel extends StatelessWidget {
     final processes = host.diagnostics.topProcesses
         .take(4)
         .toList(growable: false);
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '상위 프로세스',
+          style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        if (processes.isEmpty)
           const Text(
-            '상위 프로세스',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (processes.isEmpty)
-            const Text(
-              '데이터 없음',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-            )
-          else
-            ...processes.map((process) => _ProcessRow(process: process)),
-        ],
-      ),
+            '데이터 없음',
+            style: TextStyle(color: Colors.white38, fontSize: 12),
+          )
+        else
+          ...processes.map((process) => _ProcessRow(process: process)),
+      ],
     );
   }
 }
@@ -2746,27 +2605,22 @@ class _InterfacePanel extends StatelessWidget {
     final interfaces = host.diagnostics.interfaces
         .take(3)
         .toList(growable: false);
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '네트워크 인터페이스',
+          style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        if (interfaces.isEmpty)
           const Text(
-            '네트워크 인터페이스',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (interfaces.isEmpty)
-            const Text(
-              '데이터 없음',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-            )
-          else
-            _InterfaceBadgeBar(interfaces: interfaces),
-        ],
-      ),
+            '데이터 없음',
+            style: TextStyle(color: Colors.white38, fontSize: 12),
+          )
+        else
+          _InterfaceBadgeBar(interfaces: interfaces),
+      ],
     );
   }
 }
@@ -2779,27 +2633,1116 @@ class _StoragePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final disks = host.diagnostics.disks.take(3).toList(growable: false);
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '스토리지',
+          style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        if (disks.isEmpty)
           const Text(
-            '스토리지',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (disks.isEmpty)
-            const Text(
-              '데이터 없음',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-            )
-          else
-            ...disks.map((disk) => _DiskUsageBar(disk: disk)),
-        ],
+            '데이터 없음',
+            style: TextStyle(color: Colors.white38, fontSize: 12),
+          )
+        else
+          ...disks.map((disk) => _DiskUsageBar(disk: disk)),
+      ],
+    );
+  }
+}
+
+// === Widget dock system =====================================================
+
+const int _kDockColumns = 4;
+const int _kDockRows = 10;
+
+const List<_WidgetPlacementSeed> _defaultDockPlacements = [
+  _WidgetPlacementSeed(
+    type: SidebarWidgetType.globalMetrics,
+    wing: SidebarWing.left,
+    column: 0,
+    row: 0,
+  ),
+  _WidgetPlacementSeed(
+    type: SidebarWidgetType.commandConsole,
+    wing: SidebarWing.left,
+    column: 0,
+    row: 4,
+  ),
+  _WidgetPlacementSeed(
+    type: SidebarWidgetType.telemetry,
+    wing: SidebarWing.right,
+    column: 0,
+    row: 0,
+  ),
+  _WidgetPlacementSeed(
+    type: SidebarWidgetType.processes,
+    wing: SidebarWing.right,
+    column: 0,
+    row: 4,
+  ),
+  _WidgetPlacementSeed(
+    type: SidebarWidgetType.network,
+    wing: SidebarWing.right,
+    column: 0,
+    row: 7,
+  ),
+  _WidgetPlacementSeed(
+    type: SidebarWidgetType.storage,
+    wing: SidebarWing.right,
+    column: 0,
+    row: 9,
+  ),
+];
+
+typedef _SidebarWidgetBuilder =
+    Widget Function(BuildContext context, _WidgetBuildContext data);
+
+class _WidgetBuildContext {
+  const _WidgetBuildContext({
+    required this.frame,
+    required this.selectedHost,
+    required this.samples,
+    required this.constraints,
+  });
+
+  final TwinStateFrame frame;
+  final TwinHost? selectedHost;
+  final List<_MetricSample> samples;
+  final BoxConstraints constraints;
+}
+
+class _WidgetBlueprint {
+  const _WidgetBlueprint({
+    required this.type,
+    required this.displayName,
+    required this.description,
+    required this.allowedWings,
+    required this.widthUnits,
+    required this.heightUnits,
+    required this.builder,
+    this.requiresHost = false,
+  });
+
+  final SidebarWidgetType type;
+  final String displayName;
+  final String description;
+  final Set<SidebarWing> allowedWings;
+  final int widthUnits;
+  final int heightUnits;
+  final bool requiresHost;
+  final _SidebarWidgetBuilder builder;
+}
+
+const Map<SidebarWidgetType, _WidgetBlueprint> _widgetBlueprints = {
+  SidebarWidgetType.globalMetrics: _WidgetBlueprint(
+    type: SidebarWidgetType.globalMetrics,
+    displayName: '전역 지표',
+    description: '클러스터의 평균 부하와 온도, 링크를 한눈에 요약합니다.',
+    allowedWings: {SidebarWing.left},
+    widthUnits: 4,
+    heightUnits: 4,
+    builder: _buildGlobalMetricsWidget,
+  ),
+  SidebarWidgetType.commandConsole: _WidgetBlueprint(
+    type: SidebarWidgetType.commandConsole,
+    displayName: '원격 자동화',
+    description: '명령 전송 · 최근 요청을 관리합니다.',
+    allowedWings: {SidebarWing.left},
+    widthUnits: 4,
+    heightUnits: 6,
+    builder: _buildCommandConsoleWidget,
+  ),
+  SidebarWidgetType.telemetry: _WidgetBlueprint(
+    type: SidebarWidgetType.telemetry,
+    displayName: '실시간 텔레메트리',
+    description: '선택한 노드의 CPU/온도/링크 상태를 HUD 형태로 제공합니다.',
+    allowedWings: {SidebarWing.right},
+    widthUnits: 4,
+    heightUnits: 4,
+    requiresHost: true,
+    builder: _buildTelemetryWidget,
+  ),
+  SidebarWidgetType.processes: _WidgetBlueprint(
+    type: SidebarWidgetType.processes,
+    displayName: '상위 프로세스',
+    description: 'CPU 사용량 기준 상위 프로세스를 보여줍니다.',
+    allowedWings: {SidebarWing.right},
+    widthUnits: 4,
+    heightUnits: 3,
+    requiresHost: true,
+    builder: _buildProcessWidget,
+  ),
+  SidebarWidgetType.network: _WidgetBlueprint(
+    type: SidebarWidgetType.network,
+    displayName: '네트워크 인터페이스',
+    description: '주요 인터페이스의 양방향 트래픽과 상태를 시각화합니다.',
+    allowedWings: {SidebarWing.right},
+    widthUnits: 4,
+    heightUnits: 2,
+    requiresHost: true,
+    builder: _buildNetworkWidget,
+  ),
+  SidebarWidgetType.storage: _WidgetBlueprint(
+    type: SidebarWidgetType.storage,
+    displayName: '스토리지',
+    description: '스토리지 볼륨과 사용량을 표시합니다.',
+    allowedWings: {SidebarWing.right},
+    widthUnits: 4,
+    heightUnits: 1,
+    requiresHost: true,
+    builder: _buildStorageWidget,
+  ),
+};
+
+Widget _buildGlobalMetricsWidget(
+  BuildContext context,
+  _WidgetBuildContext data,
+) => _SidebarOverviewCard(frame: data.frame);
+
+Widget _buildCommandConsoleWidget(
+  BuildContext context,
+  _WidgetBuildContext data,
+) => _CommandConsoleCard(frame: data.frame, selectedHost: data.selectedHost);
+
+Widget _buildTelemetryWidget(BuildContext context, _WidgetBuildContext data) {
+  final host = data.selectedHost;
+  if (host == null) {
+    return const _DockHostGuard(message: '노드를 선택하여 연결 상태를 확인하세요.');
+  }
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _OverlayHeader(host: host, theme: Theme.of(context).textTheme),
+      const SizedBox(height: 12),
+      Expanded(
+        child: _RealtimeTelemetryCard(host: host, samples: data.samples),
+      ),
+    ],
+  );
+}
+
+Widget _buildProcessWidget(BuildContext context, _WidgetBuildContext data) {
+  final host = data.selectedHost;
+  if (host == null) {
+    return const _DockHostGuard(message: '대상을 선택하면 프로세스를 보여줍니다.');
+  }
+  return _ProcessPanel(host: host);
+}
+
+Widget _buildNetworkWidget(BuildContext context, _WidgetBuildContext data) {
+  final host = data.selectedHost;
+  if (host == null) {
+    return const _DockHostGuard(message: '네트워크 링크는 선택된 노드 기준으로 표시됩니다.');
+  }
+  return _InterfacePanel(host: host);
+}
+
+Widget _buildStorageWidget(BuildContext context, _WidgetBuildContext data) {
+  final host = data.selectedHost;
+  if (host == null) {
+    return const _DockHostGuard(message: '스토리지 사용량을 보려면 노드를 선택하세요.');
+  }
+  return _StoragePanel(host: host);
+}
+
+class _WidgetPlacementSeed {
+  const _WidgetPlacementSeed({
+    required this.type,
+    required this.wing,
+    required this.column,
+    required this.row,
+  });
+
+  final SidebarWidgetType type;
+  final SidebarWing wing;
+  final int column;
+  final int row;
+}
+
+class _WidgetPlacement {
+  const _WidgetPlacement({
+    required this.id,
+    required this.type,
+    required this.wing,
+    required this.column,
+    required this.row,
+    required this.widthUnits,
+    required this.heightUnits,
+  });
+
+  final String id;
+  final SidebarWidgetType type;
+  final SidebarWing wing;
+  final int column;
+  final int row;
+  final int widthUnits;
+  final int heightUnits;
+
+  bool overlaps(
+    int otherColumn,
+    int otherRow,
+    int otherWidth,
+    int otherHeight,
+  ) {
+    final rect = Rect.fromLTWH(
+      column.toDouble(),
+      row.toDouble(),
+      widthUnits.toDouble(),
+      heightUnits.toDouble(),
+    );
+    final other = Rect.fromLTWH(
+      otherColumn.toDouble(),
+      otherRow.toDouble(),
+      otherWidth.toDouble(),
+      otherHeight.toDouble(),
+    );
+    return rect.overlaps(other);
+  }
+
+  _WidgetPlacement copyWith({int? column, int? row}) => _WidgetPlacement(
+    id: id,
+    type: type,
+    wing: wing,
+    column: column ?? this.column,
+    row: row ?? this.row,
+    widthUnits: widthUnits,
+    heightUnits: heightUnits,
+  );
+}
+
+class _WidgetDockController extends ChangeNotifier {
+  _WidgetDockController({
+    required List<_WidgetPlacementSeed> initialPlacements,
+  }) {
+    for (final seed in initialPlacements) {
+      final blueprint = _widgetBlueprints[seed.type]!;
+      if (!blueprint.allowedWings.contains(seed.wing)) {
+        continue;
+      }
+      final placement = _WidgetPlacement(
+        id: 'seed_${_nextId++}',
+        type: seed.type,
+        wing: seed.wing,
+        column: seed.column,
+        row: seed.row,
+        widthUnits: blueprint.widthUnits,
+        heightUnits: blueprint.heightUnits,
+      );
+      if (!canPlace(seed.wing, seed.type, seed.column, seed.row)) {
+        continue;
+      }
+      _placements[seed.wing]!.add(placement);
+      _activeTypes.add(seed.type);
+    }
+    _sortPlacements();
+  }
+
+  final Map<SidebarWing, List<_WidgetPlacement>> _placements = {
+    SidebarWing.left: <_WidgetPlacement>[],
+    SidebarWing.right: <_WidgetPlacement>[],
+  };
+  final Set<SidebarWidgetType> _activeTypes = {};
+  int _nextId = 0;
+
+  List<_WidgetPlacement> placementsFor(SidebarWing wing) =>
+      List.unmodifiable(_placements[wing]!);
+
+  Set<SidebarWidgetType> get activeTypes => Set.unmodifiable(_activeTypes);
+
+  bool canPlace(
+    SidebarWing wing,
+    SidebarWidgetType type,
+    int column,
+    int row, {
+    String? ignoreId,
+  }) {
+    final blueprint = _widgetBlueprints[type]!;
+    if (!blueprint.allowedWings.contains(wing)) {
+      return false;
+    }
+    if (column < 0 || row < 0) {
+      return false;
+    }
+    if (column + blueprint.widthUnits > _kDockColumns) {
+      return false;
+    }
+    if (row + blueprint.heightUnits > _kDockRows) {
+      return false;
+    }
+    if (ignoreId == null && _activeTypes.contains(type)) {
+      return false;
+    }
+    for (final placement in _placements[wing]!) {
+      if (placement.id == ignoreId) continue;
+      if (placement.overlaps(
+        column,
+        row,
+        blueprint.widthUnits,
+        blueprint.heightUnits,
+      )) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void addPlacement(
+    SidebarWidgetType type,
+    SidebarWing wing,
+    int column,
+    int row,
+  ) {
+    final blueprint = _widgetBlueprints[type]!;
+    if (!canPlace(wing, type, column, row)) {
+      return;
+    }
+    final placement = _WidgetPlacement(
+      id: 'dock_${_nextId++}',
+      type: type,
+      wing: wing,
+      column: column,
+      row: row,
+      widthUnits: blueprint.widthUnits,
+      heightUnits: blueprint.heightUnits,
+    );
+    _placements[wing]!.add(placement);
+    _activeTypes.add(type);
+    _sortPlacements();
+    notifyListeners();
+  }
+
+  void movePlacement(String id, SidebarWing wing, int column, int row) {
+    final list = _placements[wing]!;
+    final index = list.indexWhere((placement) => placement.id == id);
+    if (index == -1) return;
+    final placement = list[index];
+    if (!canPlace(wing, placement.type, column, row, ignoreId: id)) {
+      return;
+    }
+    list[index] = placement.copyWith(column: column, row: row);
+    _sortPlacements();
+    notifyListeners();
+  }
+
+  void removePlacement(String id) {
+    for (final wing in SidebarWing.values) {
+      final list = _placements[wing]!;
+      final index = list.indexWhere((placement) => placement.id == id);
+      if (index == -1) continue;
+      final removed = list.removeAt(index);
+      _activeTypes.remove(removed.type);
+      notifyListeners();
+      return;
+    }
+  }
+
+  void _sortPlacements() {
+    for (final wing in SidebarWing.values) {
+      _placements[wing]!.sort((a, b) {
+        final rowCompare = a.row.compareTo(b.row);
+        if (rowCompare != 0) return rowCompare;
+        return a.column.compareTo(b.column);
+      });
+    }
+  }
+}
+
+class _WidgetGridPanel extends StatefulWidget {
+  const _WidgetGridPanel({
+    required this.wing,
+    required this.controller,
+    required this.frame,
+    required this.selectedHost,
+    required this.samples,
+    required this.emptyLabel,
+  });
+
+  final SidebarWing wing;
+  final _WidgetDockController controller;
+  final TwinStateFrame frame;
+  final TwinHost? selectedHost;
+  final List<_MetricSample> samples;
+  final String emptyLabel;
+
+  @override
+  State<_WidgetGridPanel> createState() => _WidgetGridPanelState();
+}
+
+class _WidgetGridPanelState extends State<_WidgetGridPanel> {
+  final GlobalKey _gridKey = GlobalKey();
+  _DropIndicator? _indicator;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        final placements = widget.controller.placementsFor(widget.wing);
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final spec = _GridSpec.compute(constraints);
+            final children = <Widget>[
+              Positioned.fill(
+                child: CustomPaint(painter: _GridBackgroundPainter(spec: spec)),
+              ),
+            ];
+
+            if (placements.isEmpty) {
+              children.add(
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      widget.emptyLabel,
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            for (final placement in placements) {
+              children.add(
+                _DockedWidgetTile(
+                  key: ValueKey(placement.id),
+                  placement: placement,
+                  spec: spec,
+                  controller: widget.controller,
+                  frame: widget.frame,
+                  selectedHost: widget.selectedHost,
+                  samples: widget.samples,
+                ),
+              );
+            }
+
+            if (_indicator != null) {
+              final rect = spec.rectFor(
+                _indicator!.column,
+                _indicator!.row,
+                _indicator!.widthUnits,
+                _indicator!.heightUnits,
+              );
+              children.add(
+                Positioned(
+                  left: rect.left,
+                  top: rect.top,
+                  width: rect.width,
+                  height: rect.height,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color:
+                          (_indicator!.isValid
+                                  ? Colors.tealAccent
+                                  : Colors.redAccent)
+                              .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: _indicator!.isValid
+                            ? Colors.tealAccent.withValues(alpha: 0.6)
+                            : Colors.redAccent,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                key: _gridKey,
+                width: constraints.maxWidth,
+                height: spec.totalHeight,
+                child: DragTarget<_DockDragPayload>(
+                  onWillAcceptWithDetails: (details) =>
+                      details.data.allowedWings.contains(widget.wing),
+                  onMove: (details) => _handleDrag(details, spec),
+                  onLeave: (_) => setState(() => _indicator = null),
+                  onAcceptWithDetails: (details) => _handleDrop(details, spec),
+                  builder: (context, _, __) => Stack(children: children),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _handleDrag(
+    DragTargetDetails<_DockDragPayload> details,
+    _GridSpec spec,
+  ) {
+    final payload = details.data;
+    final renderBox = _gridKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) {
+      return;
+    }
+    if (!payload.allowedWings.contains(widget.wing)) {
+      setState(() => _indicator = null);
+      return;
+    }
+    final local = renderBox.globalToLocal(details.offset);
+    final cell = spec.cellForOffset(local);
+    if (cell == null) {
+      setState(() => _indicator = null);
+      return;
+    }
+    final canPlace = widget.controller.canPlace(
+      widget.wing,
+      payload.type,
+      cell.column,
+      cell.row,
+      ignoreId: payload.placementId,
+    );
+    setState(() {
+      _indicator = _DropIndicator(
+        column: cell.column,
+        row: cell.row,
+        widthUnits: payload.widthUnits,
+        heightUnits: payload.heightUnits,
+        isValid: canPlace,
+      );
+    });
+  }
+
+  void _handleDrop(
+    DragTargetDetails<_DockDragPayload> details,
+    _GridSpec spec,
+  ) {
+    final indicator = _indicator;
+    final payload = details.data;
+    if (indicator == null) {
+      return;
+    }
+    if (!indicator.isValid) {
+      _showInvalidSnack();
+      setState(() => _indicator = null);
+      return;
+    }
+    if (payload.placementId != null) {
+      widget.controller.movePlacement(
+        payload.placementId!,
+        widget.wing,
+        indicator.column,
+        indicator.row,
+      );
+    } else {
+      widget.controller.addPlacement(
+        payload.type,
+        widget.wing,
+        indicator.column,
+        indicator.row,
+      );
+    }
+    setState(() => _indicator = null);
+  }
+
+  void _showInvalidSnack() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('해당 위치에 배치할 수 없습니다.'),
+        duration: Duration(milliseconds: 900),
       ),
     );
   }
+}
+
+class _DockedWidgetTile extends StatelessWidget {
+  const _DockedWidgetTile({
+    super.key,
+    required this.placement,
+    required this.spec,
+    required this.controller,
+    required this.frame,
+    required this.selectedHost,
+    required this.samples,
+  });
+
+  final _WidgetPlacement placement;
+  final _GridSpec spec;
+  final _WidgetDockController controller;
+  final TwinStateFrame frame;
+  final TwinHost? selectedHost;
+  final List<_MetricSample> samples;
+
+  @override
+  Widget build(BuildContext context) {
+    final blueprint = _widgetBlueprints[placement.type]!;
+    final rect = spec.rectFor(
+      placement.column,
+      placement.row,
+      placement.widthUnits,
+      placement.heightUnits,
+    );
+    final payload = _DockDragPayload.existing(
+      placementId: placement.id,
+      type: placement.type,
+      widthUnits: placement.widthUnits,
+      heightUnits: placement.heightUnits,
+      allowedWings: blueprint.allowedWings,
+    );
+
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0x220C1A2A),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: const Color(0x331B2333)),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 34, 20, 20),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final data = _WidgetBuildContext(
+                      frame: frame,
+                      selectedHost: selectedHost,
+                      samples: samples,
+                      constraints: constraints,
+                    );
+                    return blueprint.builder(context, data);
+                  },
+                ),
+              ),
+            ),
+            Positioned(
+              right: 6,
+              top: 6,
+              child: IconButton(
+                visualDensity: VisualDensity.compact,
+                iconSize: 16,
+                splashRadius: 18,
+                icon: const Icon(Icons.close, color: Colors.white38),
+                onPressed: () => controller.removePlacement(placement.id),
+              ),
+            ),
+            Positioned(
+              left: 8,
+              top: 6,
+              child: LongPressDraggable<_DockDragPayload>(
+                data: payload,
+                feedback: Opacity(
+                  opacity: 0.9,
+                  child: SizedBox(
+                    width: rect.width,
+                    height: rect.height,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: const Color(0x330C1A2A),
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: Colors.tealAccent.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                child: const _DockGripIcon(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DockGripIcon extends StatelessWidget {
+  const _DockGripIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 24,
+      decoration: BoxDecoration(
+        color: const Color(0x330C1A2A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x331B2333)),
+      ),
+      alignment: Alignment.center,
+      child: const Icon(Icons.drag_indicator, size: 16, color: Colors.white54),
+    );
+  }
+}
+
+class _DockHostGuard extends StatelessWidget {
+  const _DockHostGuard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        message,
+        style: const TextStyle(color: Colors.white38, fontSize: 12),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+}
+
+class _WidgetPaletteOverlay extends StatelessWidget {
+  const _WidgetPaletteOverlay({
+    required this.controller,
+    required this.onClose,
+  });
+
+  final _WidgetDockController controller;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = controller.activeTypes;
+    final leftBlueprints = _widgetBlueprints.values
+        .where((blueprint) => blueprint.allowedWings.contains(SidebarWing.left))
+        .toList(growable: false);
+    final rightBlueprints = _widgetBlueprints.values
+        .where(
+          (blueprint) => blueprint.allowedWings.contains(SidebarWing.right),
+        )
+        .toList(growable: false);
+
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 32),
+        child: Material(
+          color: const Color(0xF00A111C),
+          borderRadius: BorderRadius.circular(28),
+          elevation: 24,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 820),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Widget Dock',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: onClose,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    '필요한 모듈을 길게 눌러 사이드바 격자에 드롭하세요. 이미 배치된 항목은 다시 추가할 수 없습니다.',
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                  const SizedBox(height: 18),
+                  _WidgetPaletteSection(
+                    title: '좌측 패널',
+                    blueprints: leftBlueprints,
+                    activeTypes: active,
+                  ),
+                  const SizedBox(height: 18),
+                  _WidgetPaletteSection(
+                    title: '우측 패널',
+                    blueprints: rightBlueprints,
+                    activeTypes: active,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WidgetPaletteSection extends StatelessWidget {
+  const _WidgetPaletteSection({
+    required this.title,
+    required this.blueprints,
+    required this.activeTypes,
+  });
+
+  final String title;
+  final List<_WidgetBlueprint> blueprints;
+  final Set<SidebarWidgetType> activeTypes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: blueprints
+              .map(
+                (blueprint) => _WidgetPaletteChip(
+                  blueprint: blueprint,
+                  isActive: activeTypes.contains(blueprint.type),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _WidgetPaletteChip extends StatelessWidget {
+  const _WidgetPaletteChip({required this.blueprint, required this.isActive});
+
+  final _WidgetBlueprint blueprint;
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    final chip = Container(
+      width: 200,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0x220C1A2A) : const Color(0x330C1A2A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isActive
+              ? Colors.redAccent.withValues(alpha: 0.5)
+              : const Color(0x331B2333),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            blueprint.displayName,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            blueprint.description,
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+
+    if (isActive) {
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          chip,
+          const Icon(Icons.lock, size: 18, color: Colors.redAccent),
+        ],
+      );
+    }
+
+    return LongPressDraggable<_DockDragPayload>(
+      data: _DockDragPayload.fromBlueprint(blueprint),
+      feedback: Material(color: Colors.transparent, child: chip),
+      child: chip,
+    );
+  }
+}
+
+class _WidgetPaletteButton extends StatelessWidget {
+  const _WidgetPaletteButton({required this.isActive, required this.onPressed});
+
+  final bool isActive;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      style: TextButton.styleFrom(
+        foregroundColor: isActive ? Colors.tealAccent : Colors.white70,
+      ),
+      onPressed: onPressed,
+      icon: const Icon(Icons.widgets_outlined, size: 16),
+      label: Text(isActive ? '위젯 닫기' : '위젯'),
+    );
+  }
+}
+
+class _GridSpec {
+  const _GridSpec({
+    required this.cellSize,
+    required this.padding,
+    required this.gap,
+    required this.columns,
+    required this.rows,
+  });
+
+  final double cellSize;
+  final EdgeInsets padding;
+  final double gap;
+  final int columns;
+  final int rows;
+
+  static _GridSpec compute(BoxConstraints constraints) {
+    const padding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
+    const gap = 12.0;
+    final available =
+        (constraints.maxWidth - padding.horizontal) - gap * (_kDockColumns - 1);
+    final usableWidth = math.max(160.0, available);
+    final cellSize = usableWidth / _kDockColumns;
+    return _GridSpec(
+      cellSize: cellSize,
+      padding: padding,
+      gap: gap,
+      columns: _kDockColumns,
+      rows: _kDockRows,
+    );
+  }
+
+  double spanWidth(int widthUnits) =>
+      widthUnits * cellSize + (widthUnits - 1) * gap;
+
+  double spanHeight(int heightUnits) =>
+      heightUnits * cellSize + (heightUnits - 1) * gap;
+
+  double get totalHeight =>
+      padding.vertical + rows * cellSize + (rows - 1) * gap;
+
+  Rect rectFor(int column, int row, int widthUnits, int heightUnits) =>
+      Rect.fromLTWH(
+        padding.left + column * (cellSize + gap),
+        padding.top + row * (cellSize + gap),
+        spanWidth(widthUnits),
+        spanHeight(heightUnits),
+      );
+
+  _GridCell? cellForOffset(Offset offset) {
+    final dx = offset.dx - padding.left;
+    final dy = offset.dy - padding.top;
+    if (dx < 0 || dy < 0) return null;
+    final column = (dx / (cellSize + gap)).floor();
+    final row = (dy / (cellSize + gap)).floor();
+    if (column < 0 || column >= columns || row < 0 || row >= rows) {
+      return null;
+    }
+    final cellLeft = padding.left + column * (cellSize + gap);
+    final cellTop = padding.top + row * (cellSize + gap);
+    if (offset.dx > cellLeft + cellSize || offset.dy > cellTop + cellSize) {
+      return null;
+    }
+    return _GridCell(column: column, row: row);
+  }
+}
+
+class _GridCell {
+  const _GridCell({required this.column, required this.row});
+
+  final int column;
+  final int row;
+}
+
+class _GridBackgroundPainter extends CustomPainter {
+  const _GridBackgroundPainter({required this.spec});
+
+  final _GridSpec spec;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0x110B1B2A)
+      ..style = PaintingStyle.fill;
+    for (var row = 0; row < spec.rows; row++) {
+      for (var col = 0; col < spec.columns; col++) {
+        final rect = spec.rectFor(col, row, 1, 1).deflate(4);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(8)),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _DockDragPayload {
+  const _DockDragPayload._({
+    required this.type,
+    required this.allowedWings,
+    required this.widthUnits,
+    required this.heightUnits,
+    this.placementId,
+  });
+
+  factory _DockDragPayload.fromBlueprint(_WidgetBlueprint blueprint) =>
+      _DockDragPayload._(
+        type: blueprint.type,
+        allowedWings: blueprint.allowedWings,
+        widthUnits: blueprint.widthUnits,
+        heightUnits: blueprint.heightUnits,
+      );
+
+  factory _DockDragPayload.existing({
+    required String placementId,
+    required SidebarWidgetType type,
+    required int widthUnits,
+    required int heightUnits,
+    required Set<SidebarWing> allowedWings,
+  }) => _DockDragPayload._(
+    placementId: placementId,
+    type: type,
+    allowedWings: allowedWings,
+    widthUnits: widthUnits,
+    heightUnits: heightUnits,
+  );
+
+  final String? placementId;
+  final SidebarWidgetType type;
+  final Set<SidebarWing> allowedWings;
+  final int widthUnits;
+  final int heightUnits;
+}
+
+class _DropIndicator {
+  const _DropIndicator({
+    required this.column,
+    required this.row,
+    required this.widthUnits,
+    required this.heightUnits,
+    required this.isValid,
+  });
+
+  final int column;
+  final int row;
+  final int widthUnits;
+  final int heightUnits;
+  final bool isValid;
 }
