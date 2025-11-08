@@ -4,7 +4,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'core/models/command_models.dart';
 import 'core/models/twin_models.dart';
+import 'core/services/command_service.dart';
 import 'core/services/twin_channel.dart';
 
 enum TwinViewportMode { topology, heatmap }
@@ -281,17 +283,10 @@ class _SidebarState extends State<_Sidebar> {
     );
   }
 
-  List<Widget> _buildPages() {
-    final cards = <Widget>[_SidebarOverviewCard(frame: widget.frame)];
-    final host = widget.selectedHost;
-    if (host != null) {
-      cards.add(_GlassTile(child: _HostVitalsBar(host: host)));
-      cards.add(_GlassTile(child: _SelectedTelemetryPanel(host: host)));
-    } else {
-      cards.add(const _GlassTile(child: _SidebarPlaceholder()));
-    }
-    return cards;
-  }
+  List<Widget> _buildPages() => [
+    _SidebarOverviewCard(frame: widget.frame),
+    _CommandConsoleCard(frame: widget.frame, selectedHost: widget.selectedHost),
+  ];
 }
 
 class _StatusSidebar extends StatelessWidget {
@@ -822,24 +817,6 @@ class _SidebarOverviewCard extends StatelessWidget {
   }
 }
 
-class _SidebarPlaceholder extends StatelessWidget {
-  const _SidebarPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 220,
-      child: Center(
-        child: Text(
-          '노드를 선택하면 실시간 텔레메트리를 확인할 수 있습니다.',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
-  }
-}
-
 class _DotsIndicator extends StatelessWidget {
   const _DotsIndicator({
     required this.count,
@@ -877,6 +854,310 @@ class _DotsIndicator extends StatelessWidget {
           child: dot,
         );
       }),
+    );
+  }
+}
+
+class _CommandConsoleCard extends StatefulWidget {
+  const _CommandConsoleCard({required this.frame, required this.selectedHost});
+
+  final TwinStateFrame frame;
+  final TwinHost? selectedHost;
+
+  @override
+  State<_CommandConsoleCard> createState() => _CommandConsoleCardState();
+}
+
+class _CommandConsoleCardState extends State<_CommandConsoleCard> {
+  late final CommandService _commandService;
+  final TextEditingController _commandController = TextEditingController();
+  final TextEditingController _timeoutController = TextEditingController();
+  final List<CommandJob> _jobs = [];
+  String? _selectedHostname;
+  String? _formError;
+  bool _sending = false;
+  bool _loading = false;
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _commandService = CommandService();
+    _selectedHostname = widget.selectedHost?.hostname ?? _firstHostName();
+    _refreshCommands();
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _refreshCommands(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _CommandConsoleCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_selectedHostname == null && widget.selectedHost != null) {
+      setState(() => _selectedHostname = widget.selectedHost!.hostname);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    _commandService.dispose();
+    _commandController.dispose();
+    _timeoutController.dispose();
+    super.dispose();
+  }
+
+  String? _firstHostName() {
+    for (final host in widget.frame.hosts) {
+      if (!host.isCore) {
+        return host.hostname;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _refreshCommands() async {
+    if (_loading) return;
+    if (_selectedHostname == null) return;
+    setState(() => _loading = true);
+    try {
+      final result = await _commandService.listCommands(
+        hostname: _selectedHostname,
+        page: 1,
+        pageSize: 5,
+      );
+      if (!mounted) return;
+      setState(() {
+        _jobs
+          ..clear()
+          ..addAll(result.items);
+      });
+    } catch (_) {
+      // ignore
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _submitCommand() async {
+    final target = _selectedHostname;
+    if (target == null) {
+      setState(() => _formError = '대상 노드를 선택하세요.');
+      return;
+    }
+    final command = _commandController.text.trim();
+    if (command.isEmpty) {
+      setState(() => _formError = '명령을 입력하세요.');
+      return;
+    }
+    double? timeout;
+    if (_timeoutController.text.trim().isNotEmpty) {
+      timeout = double.tryParse(_timeoutController.text.trim());
+    }
+    setState(() {
+      _formError = null;
+      _sending = true;
+    });
+    try {
+      await _commandService.createCommand(
+        hostname: target,
+        command: command,
+        timeoutSeconds: timeout,
+      );
+      _commandController.clear();
+      _timeoutController.clear();
+      await _refreshCommands();
+    } catch (error) {
+      setState(() => _formError = '전송 실패: $error');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Color _statusColor(CommandStatus status) {
+    switch (status) {
+      case CommandStatus.pending:
+        return Colors.amberAccent;
+      case CommandStatus.running:
+        return Colors.lightBlueAccent;
+      case CommandStatus.succeeded:
+        return Colors.tealAccent;
+      case CommandStatus.failed:
+        return Colors.redAccent;
+      case CommandStatus.timeout:
+        return Colors.deepOrangeAccent;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hosts = widget.frame.hosts.where((host) => !host.isCore).toList();
+    if (hosts.isEmpty) {
+      return _GlassTile(
+        child: SizedBox(
+          height: 220,
+          child: Center(
+            child: Text(
+              '제어 가능한 노드가 없습니다.',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+            ),
+          ),
+        ),
+      );
+    }
+    final hostItems = hosts
+        .map(
+          (host) => DropdownMenuItem<String>(
+            value: host.hostname,
+            child: Text(host.displayName),
+          ),
+        )
+        .toList();
+
+    return _GlassTile(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '원격 자동화',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          InputDecorator(
+            decoration: const InputDecoration(
+              labelText: '대상 노드',
+              border: OutlineInputBorder(),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedHostname ?? hostItems.first.value,
+                items: hostItems,
+                onChanged: (value) => setState(() => _selectedHostname = value),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _commandController,
+            decoration: const InputDecoration(
+              labelText: '명령어',
+              hintText: '예) ipconfig /all',
+              border: OutlineInputBorder(),
+            ),
+            minLines: 1,
+            maxLines: 2,
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _timeoutController,
+            decoration: const InputDecoration(
+              labelText: '타임아웃(초, 선택)',
+              border: OutlineInputBorder(),
+            ),
+            keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: _sending ? null : _submitCommand,
+                icon: _sending
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send, size: 16),
+                label: const Text('실행'),
+              ),
+              const SizedBox(width: 12),
+              if (_formError != null)
+                Expanded(
+                  child: Text(
+                    _formError!,
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          const SizedBox(height: 8),
+          if (_jobs.isEmpty)
+            const Text(
+              '명령 기록이 없습니다.',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            )
+          else
+            ..._jobs.map(
+              (job) =>
+                  _CommandJobTile(color: _statusColor(job.status), job: job),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommandJobTile extends StatelessWidget {
+  const _CommandJobTile({required this.color, required this.job});
+
+  final Color color;
+  final CommandJob job;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0x110A1018),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x221B2333)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  job.command,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Chip(
+                backgroundColor: color.withValues(alpha: 0.15),
+                side: BorderSide.none,
+                label: Text(
+                  job.statusLabel,
+                  style: TextStyle(color: color, fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${job.hostname} · ${job.requestedLabel}',
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -996,7 +1277,7 @@ class _HostOverlayState extends State<_HostOverlay> {
   }
 }
 
-class _HostOverlayCard extends StatefulWidget {
+class _HostOverlayCard extends StatelessWidget {
   const _HostOverlayCard({
     super.key,
     required this.host,
@@ -1007,29 +1288,8 @@ class _HostOverlayCard extends StatefulWidget {
   final List<_MetricSample> samples;
 
   @override
-  State<_HostOverlayCard> createState() => _HostOverlayCardState();
-}
-
-class _HostOverlayCardState extends State<_HostOverlayCard> {
-  late final PageController _controller;
-  int _page = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = PageController();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
-    final sections = _buildSections();
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
@@ -1048,855 +1308,28 @@ class _HostOverlayCardState extends State<_HostOverlayCard> {
             ],
           ),
           padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _OverlayHeader(host: widget.host, theme: theme),
-              const SizedBox(height: 16),
-              Expanded(
-                child: PageView.builder(
-                  controller: _controller,
-                  physics: const BouncingScrollPhysics(),
-                  clipBehavior: Clip.none,
-                  itemCount: sections.length,
-                  onPageChanged: (value) => setState(() => _page = value),
-                  itemBuilder: (context, index) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: sections[index],
-                  ),
-                ),
-              ),
-              if (sections.length > 1)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: _DotsIndicator(
-                    count: sections.length,
-                    index: _page,
-                    onSelected: (value) {
-                      if (value == _page) return;
-                      setState(() => _page = value);
-                      _controller.animateToPage(
-                        value,
-                        duration: const Duration(milliseconds: 320),
-                        curve: Curves.easeOutCubic,
-                      );
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _buildSections() {
-    final host = widget.host;
-    final samples = widget.samples;
-    return [
-      _RealtimeTelemetryCard(host: host, samples: samples),
-      _SystemSummaryPanel(host: host),
-      _ProcessPanel(host: host),
-      _InterfacePanel(host: host),
-      _StoragePanel(host: host),
-    ];
-  }
-}
-
-class _HostOverlayPlaceholder extends StatelessWidget {
-  const _HostOverlayPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0x221B2333)),
-        color: const Color(0x110D141F),
-      ),
-      alignment: Alignment.center,
-      child: const Text(
-        '노드를 선택하면 시스템 상태가 표시됩니다.',
-        style: TextStyle(color: Colors.white38),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
-}
-
-class _HostVitalsBar extends StatelessWidget {
-  const _HostVitalsBar({required this.host});
-
-  final TwinHost host;
-
-  @override
-  Widget build(BuildContext context) {
-    final osLabel = _joinNonEmpty([
-      host.hardware.osDistro,
-      host.hardware.osRelease,
-      host.hardware.osKernel,
-    ], separator: ' ');
-    final iface = _primaryInterface(host);
-    final throughput = host.metrics.netThroughputGbps;
-    final capacity = host.metrics.netCapacityGbps;
-    final memUsed = host.memoryUsedBytes;
-    final memTotal = host.memoryTotalBytes;
-    final memLabel = (memUsed != null && memTotal != null)
-        ? '${_formatBytes(memUsed)} / ${_formatBytes(memTotal)}'
-        : '${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%';
-
-    final stats = [
-      _VitalStat(
-        icon: Icons.speed,
-        label: 'CPU',
-        value: '${host.metrics.cpuLoad.toStringAsFixed(1)}%',
-      ),
-      _VitalStat(icon: Icons.memory, label: '메모리', value: memLabel),
-      _VitalStat(
-        icon: Icons.thermostat,
-        label: '온도',
-        value: host.cpuTemperature != null || host.gpuTemperature != null
-            ? '${(host.cpuTemperature ?? host.gpuTemperature)!.toStringAsFixed(1)}℃'
-            : 'N/A',
-      ),
-      _VitalStat(
-        icon: Icons.wifi_tethering,
-        label: '대역폭',
-        value: throughput != null
-            ? capacity != null
-                  ? '${throughput.toStringAsFixed(2)} / ${capacity.toStringAsFixed(1)} Gbps'
-                  : '${throughput.toStringAsFixed(2)} Gbps'
-            : '계측 없음',
-      ),
-      _VitalStat(
-        icon: Icons.access_time,
-        label: '업타임',
-        value: _formatDuration(host.uptime),
-      ),
-      _VitalStat(
-        icon: Icons.device_hub,
-        label: '인터페이스',
-        value: iface?.speedLabel ?? host.ip,
-      ),
-    ];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xE6050B16),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0x221B2333)),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black54,
-            blurRadius: 18,
-            offset: Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      host.displayName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      host.ip,
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (host.isDummy)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.amberAccent),
-                    color: Colors.black26,
-                  ),
-                  child: const Text(
-                    'DUMMY',
-                    style: TextStyle(
-                      color: Colors.amberAccent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            osLabel,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Agent ${host.agentVersion}',
-            style: const TextStyle(color: Colors.white30, fontSize: 11),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: stats
-                .map(
-                  (stat) => _VitalStatTile(
-                    icon: stat.icon,
-                    label: stat.label,
-                    value: stat.value,
-                  ),
-                )
-                .toList(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SelectedTelemetryPanel extends StatelessWidget {
-  const _SelectedTelemetryPanel({required this.host});
-
-  final TwinHost host;
-
-  @override
-  Widget build(BuildContext context) {
-    final temp = host.cpuTemperature ?? host.gpuTemperature;
-    final capacity = host.metrics.netCapacityGbps;
-    final throughput = host.metrics.netThroughputGbps ?? 0;
-    final memCaption =
-        host.memoryTotalBytes != null && host.memoryUsedBytes != null
-        ? '${_formatBytes(host.memoryUsedBytes)} / ${_formatBytes(host.memoryTotalBytes)}'
-        : null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _MetricProgressRow(
-          icon: Icons.speed,
-          label: 'CPU 사용률',
-          value: '${host.metrics.cpuLoad.toStringAsFixed(1)}%',
-          progress: host.metrics.cpuLoad / 100,
-          caption: '실시간',
-        ),
-        const SizedBox(height: 12),
-        _MetricProgressRow(
-          icon: Icons.memory,
-          label: '메모리 사용률',
-          value: '${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%',
-          progress: host.metrics.memoryUsedPercent / 100,
-          caption: memCaption,
-        ),
-        const SizedBox(height: 12),
-        _MetricProgressRow(
-          icon: Icons.thermostat,
-          label: '온도',
-          value: temp != null ? '${temp.toStringAsFixed(1)}℃' : '센서 없음',
-          progress: temp != null ? (temp / 110).clamp(0.0, 1.0) : null,
-          caption: temp != null ? '센서 실측' : null,
-        ),
-        const SizedBox(height: 12),
-        _MetricProgressRow(
-          icon: Icons.network_check,
-          label: '네트워크',
-          value: capacity != null
-              ? '${throughput.toStringAsFixed(2)} / ${capacity.toStringAsFixed(1)} Gbps'
-              : '${throughput.toStringAsFixed(2)} Gbps',
-          progress: capacity != null && capacity > 0
-              ? (throughput / capacity).clamp(0.0, 1.0)
-              : null,
-          caption: capacity != null ? '링크 용량' : '용량 정보 없음',
-        ),
-      ],
-    );
-  }
-}
-
-class _VitalStat {
-  const _VitalStat({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-}
-
-class _VitalStatTile extends StatelessWidget {
-  const _VitalStatTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 180,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0x11091A29),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0x221B2333)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: Colors.white54, size: 14),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OverlayHeader extends StatelessWidget {
-  const _OverlayHeader({required this.host, required this.theme});
-
-  final TwinHost host;
-  final TextTheme theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                host.displayName,
-                style: theme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                host.ip,
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _InfoPill(
-              icon: host.isDummy
-                  ? Icons.science_outlined
-                  : Icons.shield_outlined,
-              label: host.isDummy ? '더미 노드' : '실측 노드',
-            ),
-            if (host.rack != null)
-              _InfoPill(icon: Icons.storage_rounded, label: host.rack!),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _SystemSummaryPanel extends StatelessWidget {
-  const _SystemSummaryPanel({required this.host});
-
-  final TwinHost host;
-
-  @override
-  Widget build(BuildContext context) {
-    final metrics = host.metrics;
-
-    Iterable<(String, String)> buildRows() sync* {
-      yield ('상태', host.status.name.toUpperCase());
-      yield ('OS', host.osDisplay);
-      yield (
-        '하드웨어',
-        _joinNonEmpty([
-          host.hardware.systemManufacturer,
-          host.hardware.systemModel,
-        ]),
-      );
-      yield ('IP', host.ip);
-      yield ('업타임', _formatDuration(host.uptime));
-      yield ('CPU', host.cpuSummary);
-      yield (
-        '메모리',
-        metrics.memoryTotalBytes != null && metrics.memoryAvailableBytes != null
-            ? '${_formatBytes(metrics.memoryUsedBytes)} / ${_formatBytes(metrics.memoryTotalBytes)}'
-            : '${metrics.memoryUsedPercent.toStringAsFixed(1)}%',
-      );
-      if (metrics.netThroughputGbps != null) {
-        yield (
-          '네트워크',
-          metrics.netCapacityGbps != null
-              ? '${metrics.netThroughputGbps!.toStringAsFixed(2)} / ${metrics.netCapacityGbps!.toStringAsFixed(2)} Gbps'
-              : '${metrics.netThroughputGbps!.toStringAsFixed(2)} Gbps',
-        );
-      }
-      if (metrics.swapUsedPercent != null) {
-        yield ('스왑', '${metrics.swapUsedPercent!.toStringAsFixed(1)}%');
-      }
-      yield ('에이전트', host.agentVersion);
-      yield ('마지막 수신', host.lastSeen.toLocal().toIso8601String());
-    }
-
-    final rows = buildRows().toList();
-
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '시스템 상태',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 10),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 12,
-              childAspectRatio: 3.6,
-            ),
-            itemCount: rows.length,
-            itemBuilder: (context, index) {
-              final entry = rows[index];
-              return _SystemStatCell(label: entry.$1, value: entry.$2);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SystemStatCell extends StatelessWidget {
-  const _SystemStatCell({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white38, fontSize: 10),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ProcessPanel extends StatelessWidget {
-  const _ProcessPanel({required this.host});
-
-  final TwinHost host;
-
-  @override
-  Widget build(BuildContext context) {
-    final processes = host.diagnostics.topProcesses
-        .take(4)
-        .toList(growable: false);
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '상위 프로세스',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (processes.isEmpty)
-            const Text(
-              '데이터 없음',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-            )
-          else
-            ...processes.map((process) => _ProcessRow(process: process)),
-        ],
-      ),
-    );
-  }
-}
-
-class _InterfacePanel extends StatelessWidget {
-  const _InterfacePanel({required this.host});
-
-  final TwinHost host;
-
-  @override
-  Widget build(BuildContext context) {
-    final interfaces = host.diagnostics.interfaces
-        .take(3)
-        .toList(growable: false);
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '네트워크 인터페이스',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (interfaces.isEmpty)
-            const Text(
-              '데이터 없음',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-            )
-          else
-            _InterfaceBadgeBar(interfaces: interfaces),
-        ],
-      ),
-    );
-  }
-}
-
-class _StoragePanel extends StatelessWidget {
-  const _StoragePanel({required this.host});
-
-  final TwinHost host;
-
-  @override
-  Widget build(BuildContext context) {
-    final disks = host.diagnostics.disks.take(3).toList(growable: false);
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '스토리지',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (disks.isEmpty)
-            const Text(
-              '데이터 없음',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-            )
-          else
-            ...disks.map((disk) => _DiskUsageBar(disk: disk)),
-        ],
-      ),
-    );
-  }
-}
-
-class _GlassTile extends StatelessWidget {
-  const _GlassTile({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0x110C1A2A),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0x221B2333)),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: child,
-    );
-  }
-}
-
-class _InfoWidgetConfig {
-  const _InfoWidgetConfig({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-}
-
-class _TrendTile extends StatelessWidget {
-  const _TrendTile({required this.value, this.caption, required this.trend});
-
-  final String value;
-  final String? caption;
-  final double trend;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (caption != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              caption!,
-              style: const TextStyle(color: Colors.white54, fontSize: 11),
-            ),
-          ),
-        const SizedBox(height: 8),
-        _TrendBar(percent: trend),
-      ],
-    );
-  }
-}
-
-class _TrendBar extends StatelessWidget {
-  const _TrendBar({required this.percent});
-
-  final double percent;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: LinearProgressIndicator(
-        value: (percent / 100).clamp(0.0, 1.0),
-        minHeight: 6,
-        backgroundColor: const Color(0xFF111B2B),
-        valueColor: AlwaysStoppedAnimation<Color>(
-          Colors.tealAccent.withValues(alpha: 0.8),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProcessRow extends StatelessWidget {
-  const _ProcessRow({required this.process});
-
-  final TwinProcessSample process;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
+          child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  process.name,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  overflow: TextOverflow.ellipsis,
+                _OverlayHeader(host: host, theme: theme),
+                const SizedBox(height: 16),
+                _GlassTile(
+                  child: _RealtimeTelemetryCard(host: host, samples: samples),
                 ),
-                if (process.username != null)
-                  Text(
-                    process.username!,
-                    style: const TextStyle(color: Colors.white24, fontSize: 10),
-                  ),
+                const SizedBox(height: 14),
+                _GlassTile(child: _ProcessPanel(host: host)),
+                const SizedBox(height: 14),
+                _GlassTile(child: _InterfacePanel(host: host)),
+                const SizedBox(height: 14),
+                _GlassTile(child: _StoragePanel(host: host)),
               ],
             ),
           ),
-          SizedBox(
-            width: 90,
-            child: LinearProgressIndicator(
-              value: (process.cpuPercent / 100).clamp(0.0, 1.0),
-              minHeight: 6,
-              backgroundColor: const Color(0xFF1B2333),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                Colors.tealAccent,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '${process.cpuPercent.toStringAsFixed(1)}%',
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-        ],
+        ),
       ),
     );
   }
-}
-
-class _DiskUsageBar extends StatelessWidget {
-  const _DiskUsageBar({required this.disk});
-
-  final TwinDiskUsage disk;
-
-  double? get _usagePercent {
-    if (disk.usedPercent != null) {
-      return disk.usedPercent!.clamp(0, 100);
-    }
-    if (disk.usedBytes != null &&
-        disk.totalBytes != null &&
-        disk.totalBytes! > 0) {
-      return (disk.usedBytes! / disk.totalBytes!) * 100;
-    }
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final usagePercent = _usagePercent;
-    final usageText = (disk.usedBytes != null && disk.totalBytes != null)
-        ? '${_formatBytes(disk.usedBytes)} / ${_formatBytes(disk.totalBytes)}'
-        : null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${disk.device} · ${disk.mountpoint}',
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-          const SizedBox(height: 4),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: usagePercent != null
-                  ? (usagePercent / 100).clamp(0.0, 1.0)
-                  : 0,
-              minHeight: 6,
-              backgroundColor: const Color(0xFF101826),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                Colors.deepOrangeAccent,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            usagePercent != null
-                ? '${usagePercent.toStringAsFixed(1)}% 사용${usageText != null ? ' · $usageText' : ''}'
-                : (usageText ?? '사용량 N/A'),
-            style: const TextStyle(color: Colors.white38, fontSize: 10),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InterfaceBadgeBar extends StatelessWidget {
-  const _InterfaceBadgeBar({required this.interfaces});
-
-  final List<TwinInterfaceStats> interfaces;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: interfaces
-          .map(
-            (iface) => _InfoPill(
-              icon: iface.isUp == false ? Icons.link_off : Icons.link,
-              label: iface.speedLabel,
-            ),
-          )
-          .toList(growable: false),
-    );
-  }
-}
-
-TwinInterfaceStats? _primaryInterface(TwinHost host) {
-  for (final iface in host.diagnostics.interfaces) {
-    if (iface.isUp != false) {
-      return iface;
-    }
-  }
-  return host.diagnostics.interfaces.isNotEmpty
-      ? host.diagnostics.interfaces.first
-      : null;
-}
-
-String _formatInterfaceDescriptor(TwinHost host, bool isSource) {
-  final iface = _primaryInterface(host);
-  final name = iface?.name ?? (isSource ? 'SOURCE' : 'TARGET');
-  final speed = _formatInterfaceSpeed(iface);
-  return '${host.displayName} / $name · $speed';
-}
-
-String _formatInterfaceSpeed(TwinInterfaceStats? iface) {
-  final speed = iface?.speedMbps;
-  if (speed == null || !speed.isFinite || speed <= 0) {
-    return 'N/A';
-  }
-  if (speed >= 1000) {
-    return '${(speed / 1000).toStringAsFixed(1)} Gbps';
-  }
-  return '${speed.toStringAsFixed(0)} Mbps';
 }
 
 class _HostChipRail extends StatelessWidget {
@@ -2036,6 +1469,73 @@ class _HostChip extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _HostOverlayPlaceholder extends StatelessWidget {
+  const _HostOverlayPlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0x221B2333)),
+        color: const Color(0x110D141F),
+      ),
+      alignment: Alignment.center,
+      child: const Text(
+        '노드를 선택하면 시스템 상태가 표시됩니다.',
+        style: TextStyle(color: Colors.white38),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+}
+
+class _OverlayHeader extends StatelessWidget {
+  const _OverlayHeader({required this.host, required this.theme});
+
+  final TwinHost host;
+  final TextTheme theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                host.displayName,
+                style: theme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                host.ip,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _InfoPill(
+              icon: host.isDummy
+                  ? Icons.science_outlined
+                  : Icons.shield_outlined,
+              label: host.isDummy ? '더미 노드' : '실측 노드',
+            ),
+            if (host.rack != null)
+              _InfoPill(icon: Icons.storage_rounded, label: host.rack!),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -2959,14 +2459,347 @@ String _formatDuration(Duration duration) {
   return parts.join(' ');
 }
 
-String _joinNonEmpty(List<String?> values, {String separator = ' · '}) {
-  final filtered = values
-      .whereType<String>()
-      .map((value) => value.trim())
-      .where((value) => value.isNotEmpty)
-      .toList();
-  if (filtered.isEmpty) {
+class _GlassTile extends StatelessWidget {
+  const _GlassTile({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0x110C1A2A),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x221B2333)),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: child,
+    );
+  }
+}
+
+class _InfoWidgetConfig {
+  const _InfoWidgetConfig({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+}
+
+class _TrendTile extends StatelessWidget {
+  const _TrendTile({required this.value, this.caption, required this.trend});
+
+  final String value;
+  final String? caption;
+  final double trend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        if (caption != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              caption!,
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+          ),
+        const SizedBox(height: 8),
+        _TrendBar(percent: trend),
+      ],
+    );
+  }
+}
+
+class _TrendBar extends StatelessWidget {
+  const _TrendBar({required this.percent});
+
+  final double percent;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: LinearProgressIndicator(
+        value: (percent / 100).clamp(0.0, 1.0),
+        minHeight: 6,
+        backgroundColor: const Color(0xFF111B2B),
+        valueColor: AlwaysStoppedAnimation<Color>(
+          Colors.tealAccent.withValues(alpha: 0.8),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProcessRow extends StatelessWidget {
+  const _ProcessRow({required this.process});
+
+  final TwinProcessSample process;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  process.name,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (process.username != null)
+                  Text(
+                    process.username!,
+                    style: const TextStyle(color: Colors.white24, fontSize: 10),
+                  ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 90,
+            child: LinearProgressIndicator(
+              value: (process.cpuPercent / 100).clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: const Color(0xFF1B2333),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                Colors.tealAccent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${process.cpuPercent.toStringAsFixed(1)}%',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiskUsageBar extends StatelessWidget {
+  const _DiskUsageBar({required this.disk});
+
+  final TwinDiskUsage disk;
+
+  double? get _usagePercent {
+    if (disk.usedPercent != null) {
+      return disk.usedPercent!.clamp(0, 100);
+    }
+    if (disk.usedBytes != null &&
+        disk.totalBytes != null &&
+        disk.totalBytes! > 0) {
+      return (disk.usedBytes! / disk.totalBytes!) * 100;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final usagePercent = _usagePercent;
+    final usageText = (disk.usedBytes != null && disk.totalBytes != null)
+        ? '${_formatBytes(disk.usedBytes)} / ${_formatBytes(disk.totalBytes)}'
+        : null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${disk.device} · ${disk.mountpoint}',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: usagePercent != null
+                  ? (usagePercent / 100).clamp(0.0, 1.0)
+                  : 0,
+              minHeight: 6,
+              backgroundColor: const Color(0xFF101826),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                Colors.deepOrangeAccent,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            usagePercent != null
+                ? '${usagePercent.toStringAsFixed(1)}% 사용${usageText != null ? ' · $usageText' : ''}'
+                : (usageText ?? '사용량 N/A'),
+            style: const TextStyle(color: Colors.white38, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InterfaceBadgeBar extends StatelessWidget {
+  const _InterfaceBadgeBar({required this.interfaces});
+
+  final List<TwinInterfaceStats> interfaces;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: interfaces
+          .map(
+            (iface) => _InfoPill(
+              icon: iface.isUp == false ? Icons.link_off : Icons.link,
+              label: iface.speedLabel,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+TwinInterfaceStats? _primaryInterface(TwinHost host) {
+  for (final iface in host.diagnostics.interfaces) {
+    if (iface.isUp != false) {
+      return iface;
+    }
+  }
+  return host.diagnostics.interfaces.isNotEmpty
+      ? host.diagnostics.interfaces.first
+      : null;
+}
+
+String _formatInterfaceDescriptor(TwinHost host, bool isSource) {
+  final iface = _primaryInterface(host);
+  final name = iface?.name ?? (isSource ? 'SOURCE' : 'TARGET');
+  final speed = _formatInterfaceSpeed(iface);
+  return '${host.displayName} / $name · $speed';
+}
+
+String _formatInterfaceSpeed(TwinInterfaceStats? iface) {
+  final speed = iface?.speedMbps;
+  if (speed == null || !speed.isFinite || speed <= 0) {
     return 'N/A';
   }
-  return filtered.join(separator);
+  if (speed >= 1000) {
+    return '${(speed / 1000).toStringAsFixed(1)} Gbps';
+  }
+  return '${speed.toStringAsFixed(0)} Mbps';
+}
+
+class _ProcessPanel extends StatelessWidget {
+  const _ProcessPanel({required this.host});
+
+  final TwinHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    final processes = host.diagnostics.topProcesses
+        .take(4)
+        .toList(growable: false);
+    return _GlassTile(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '상위 프로세스',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (processes.isEmpty)
+            const Text(
+              '데이터 없음',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            )
+          else
+            ...processes.map((process) => _ProcessRow(process: process)),
+        ],
+      ),
+    );
+  }
+}
+
+class _InterfacePanel extends StatelessWidget {
+  const _InterfacePanel({required this.host});
+
+  final TwinHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    final interfaces = host.diagnostics.interfaces
+        .take(3)
+        .toList(growable: false);
+    return _GlassTile(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '네트워크 인터페이스',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (interfaces.isEmpty)
+            const Text(
+              '데이터 없음',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            )
+          else
+            _InterfaceBadgeBar(interfaces: interfaces),
+        ],
+      ),
+    );
+  }
+}
+
+class _StoragePanel extends StatelessWidget {
+  const _StoragePanel({required this.host});
+
+  final TwinHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    final disks = host.diagnostics.disks.take(3).toList(growable: false);
+    return _GlassTile(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '스토리지',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (disks.isEmpty)
+            const Text(
+              '데이터 없음',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            )
+          else
+            ...disks.map((disk) => _DiskUsageBar(disk: disk)),
+        ],
+      ),
+    );
+  }
 }
