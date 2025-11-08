@@ -18,8 +18,8 @@ void main() {
       MirrorStageApp(channel: TwinChannel(connectImmediately: false)),
     );
 
-    expect(find.text('TACTICAL OPERATIONS'), findsOneWidget);
-    expect(find.textContaining('내부망'), findsOneWidget);
-    expect(find.textContaining('온라인 노드'), findsOneWidget);
+    expect(find.text('작전 콘솔'), findsOneWidget);
+    expect(find.textContaining('내부망'), findsWidgets);
+    expect(find.textContaining('온라인'), findsWidgets);
   });
 }

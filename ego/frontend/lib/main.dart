@@ -4,9 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import 'core/models/command_models.dart';
 import 'core/models/twin_models.dart';
-import 'core/services/command_service.dart';
 import 'core/services/twin_channel.dart';
 
 enum TwinViewportMode { topology, heatmap }
@@ -111,17 +109,11 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
         TwinHost? selectedHost = _selectedHostName != null
             ? frame.hostByName(_selectedHostName!)
             : null;
-        if (selectedHost == null && frame.hosts.isNotEmpty) {
-          selectedHost = frame.hosts.first;
-          final fallbackName = selectedHost.hostname;
-          if (_selectedHostName != fallbackName) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              if (_selectedHostName != fallbackName) {
-                setState(() => _selectedHostName = fallbackName);
-              }
-            });
-          }
+        if (_selectedHostName != null && selectedHost == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            setState(() => _selectedHostName = null);
+          });
         }
 
         final heatMax = frame.maxCpuTemperature > 0
@@ -140,59 +132,44 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                   selectedHost: selectedHost,
                   heatMax: heatMax,
                   onSelectHost: _selectHost,
+                  onClearSelection: _clearSelection,
                 );
-                final deck = _OperationsDeck(
+                final leftPanel = _Sidebar(
+                  frame: frame,
+                  mode: _viewportMode,
+                  onModeChange: _setViewportMode,
+                  selectedHost: selectedHost,
+                );
+                final rightPanel = _StatusSidebar(
                   frame: frame,
                   selectedHost: selectedHost,
                 );
 
                 if (isWide) {
-                  final deckHeight = (constraints.maxHeight * 0.34).clamp(
-                    320.0,
-                    460.0,
-                  );
-                  return Column(
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _Sidebar(
-                              frame: frame,
-                              mode: _viewportMode,
-                              onModeChange: _setViewportMode,
-                              width: 340,
-                            ),
-                            Expanded(child: stage),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: deckHeight, child: deck),
+                      SizedBox(width: 320, child: leftPanel),
+                      Expanded(child: stage),
+                      SizedBox(width: 360, child: rightPanel),
                     ],
                   );
                 }
-
-                final sidebarHeight = (constraints.maxHeight * 0.32).clamp(
-                  220.0,
-                  360.0,
-                );
-                final deckHeight = (constraints.maxHeight * 0.52).clamp(
-                  320.0,
-                  520.0,
-                );
 
                 return Column(
                   children: [
                     Expanded(child: stage),
                     SizedBox(
-                      height: sidebarHeight,
-                      child: _Sidebar(
-                        frame: frame,
-                        mode: _viewportMode,
-                        onModeChange: _setViewportMode,
+                      height: (constraints.maxHeight * 0.35).clamp(
+                        260.0,
+                        420.0,
                       ),
+                      child: leftPanel,
                     ),
-                    SizedBox(height: deckHeight, child: deck),
+                    SizedBox(
+                      height: (constraints.maxHeight * 0.4).clamp(280.0, 460.0),
+                      child: rightPanel,
+                    ),
                   ],
                 );
               },
@@ -202,6 +179,12 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
       },
     );
   }
+
+  void _clearSelection() {
+    if (_selectedHostName != null) {
+      setState(() => _selectedHostName = null);
+    }
+  }
 }
 
 class _Sidebar extends StatelessWidget {
@@ -209,13 +192,13 @@ class _Sidebar extends StatelessWidget {
     required this.frame,
     required this.mode,
     required this.onModeChange,
-    this.width,
+    required this.selectedHost,
   });
 
   final TwinStateFrame frame;
   final TwinViewportMode mode;
   final ValueChanged<TwinViewportMode> onModeChange;
-  final double? width;
+  final TwinHost? selectedHost;
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +280,9 @@ class _Sidebar extends StatelessWidget {
       ),
     ];
 
-    final content = Container(
+    final hasSelection = selectedHost != null;
+
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -325,42 +310,55 @@ class _Sidebar extends StatelessWidget {
             const SizedBox(height: 16),
             Wrap(spacing: 8, runSpacing: 8, children: statusChips),
             const SizedBox(height: 20),
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: widgets
-                  .map(
-                    (config) => SizedBox(
-                      width: 260,
-                      child: _GlassTile(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              config.title,
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w600,
+            if (!hasSelection) ...[
+              _GlassTile(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      '노드를 선택하면 실시간 텔레메트리를 확인할 수 있습니다.',
+                      style: TextStyle(color: Colors.white60, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: widgets
+                    .map(
+                      (config) => SizedBox(
+                        width: 260,
+                        child: _GlassTile(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                config.title,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 12),
-                            config.child,
-                          ],
+                              const SizedBox(height: 12),
+                              config.child,
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  )
-                  .toList(),
-            ),
+                    )
+                    .toList(),
+              ),
+            ] else ...[
+              _GlassTile(child: _HostVitalsBar(host: selectedHost!)),
+              const SizedBox(height: 16),
+              _GlassTile(child: _SelectedTelemetryPanel(host: selectedHost!)),
+            ],
           ],
         ),
       ),
     );
-
-    if (width != null) {
-      return SizedBox(width: width, child: content);
-    }
-    return content;
   }
 }
 
@@ -413,6 +411,29 @@ class _ViewModeToggle extends StatelessWidget {
   }
 }
 
+class _StatusSidebar extends StatelessWidget {
+  const _StatusSidebar({required this.frame, required this.selectedHost});
+
+  final TwinStateFrame frame;
+  final TwinHost? selectedHost;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF020408), Color(0xFF060910)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        border: Border(left: BorderSide(color: Color(0x22111B2D))),
+      ),
+      child: _HostOverlay(frame: frame, host: selectedHost),
+    );
+  }
+}
+
 class _TwinViewport extends StatelessWidget {
   const _TwinViewport({
     required this.frame,
@@ -421,6 +442,7 @@ class _TwinViewport extends StatelessWidget {
     required this.selectedHost,
     required this.heatMax,
     required this.onSelectHost,
+    required this.onClearSelection,
     required this.cameraFocus,
     required this.linkPulse,
   });
@@ -431,6 +453,7 @@ class _TwinViewport extends StatelessWidget {
   final String? selectedHost;
   final double heatMax;
   final ValueChanged<String> onSelectHost;
+  final VoidCallback onClearSelection;
   final TwinPosition cameraFocus;
   final double linkPulse;
 
@@ -479,6 +502,8 @@ class _TwinViewport extends StatelessWidget {
                   }
                   if (nearest != null) {
                     onSelectHost(nearest.hostname);
+                  } else {
+                    onClearSelection();
                   }
                 },
                 child: CustomPaint(
@@ -508,6 +533,7 @@ class _TwinStage extends StatefulWidget {
     required this.selectedHost,
     required this.heatMax,
     required this.onSelectHost,
+    required this.onClearSelection,
   });
 
   final TwinStateFrame frame;
@@ -515,15 +541,16 @@ class _TwinStage extends StatefulWidget {
   final TwinHost? selectedHost;
   final double heatMax;
   final ValueChanged<String> onSelectHost;
+  final VoidCallback onClearSelection;
 
   @override
   State<_TwinStage> createState() => _TwinStageState();
 }
 
 class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
-  static const _highlightDuration = Duration(milliseconds: 1200);
   late final AnimationController _cameraController;
   late final AnimationController _linkPulseController;
+  late final Animation<double> _linkPulseAnimation;
   TwinPosition _cameraFrom = TwinPosition.zero;
   TwinPosition _cameraTo = TwinPosition.zero;
 
@@ -539,8 +566,12 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
 
     _linkPulseController = AnimationController(
       vsync: this,
-      duration: _highlightDuration,
+      duration: const Duration(seconds: 3),
     )..repeat(reverse: true);
+    _linkPulseAnimation = CurvedAnimation(
+      parent: _linkPulseController,
+      curve: Curves.easeInOutSine,
+    );
   }
 
   @override
@@ -595,29 +626,9 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
                     selectedHost: widget.selectedHost?.hostname,
                     heatMax: widget.heatMax,
                     onSelectHost: widget.onSelectHost,
+                    onClearSelection: widget.onClearSelection,
                     cameraFocus: focus,
-                    linkPulse: _linkPulseController.value,
-                  ),
-                ),
-                if (widget.selectedHost != null)
-                  Positioned(
-                    left: 24,
-                    top: 24,
-                    child: _HostVitalsBar(host: widget.selectedHost!),
-                  ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    ignoring: widget.selectedHost == null,
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Align(
-                        alignment: Alignment.topRight,
-                        child: _HostOverlay(
-                          frame: widget.frame,
-                          host: widget.selectedHost,
-                        ),
-                      ),
-                    ),
+                    linkPulse: _linkPulseAnimation.value,
                   ),
                 ),
                 Align(
@@ -637,718 +648,6 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
         );
       },
     );
-  }
-}
-
-class _OperationsDeck extends StatefulWidget {
-  const _OperationsDeck({required this.frame, required this.selectedHost});
-
-  final TwinStateFrame frame;
-  final TwinHost? selectedHost;
-
-  @override
-  State<_OperationsDeck> createState() => _OperationsDeckState();
-}
-
-class _OperationsDeckState extends State<_OperationsDeck> {
-  late final CommandService _commandService;
-  final TextEditingController _commandController = TextEditingController();
-  final TextEditingController _timeoutController = TextEditingController();
-  final TextEditingController _searchController = TextEditingController();
-  final List<CommandJob> _jobs = [];
-  Timer? _pollTimer;
-  bool _submitting = false;
-  bool _loadingCommands = false;
-  bool _hasMore = false;
-  String? _formError;
-  String? _targetHost;
-  String? _filterHostname;
-  CommandStatus? _filterStatus;
-  int _currentPage = 1;
-  static const int _pageSize = 20;
-
-  @override
-  void initState() {
-    super.initState();
-    _commandService = CommandService();
-    _targetHost = widget.selectedHost?.hostname;
-    _filterHostname = widget.selectedHost?.hostname;
-    _refreshCommands(reset: true);
-    _pollTimer = Timer.periodic(
-      const Duration(seconds: 3),
-      (_) => _refreshCommands(reset: true),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _OperationsDeck oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final hostChanged =
-        widget.selectedHost?.hostname != oldWidget.selectedHost?.hostname;
-    if (hostChanged && widget.selectedHost != null) {
-      _targetHost ??= widget.selectedHost!.hostname;
-      if (_filterHostname == null) {
-        _filterHostname = widget.selectedHost!.hostname;
-        _applyFilters();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _pollTimer?.cancel();
-    _commandService.dispose();
-    _commandController.dispose();
-    _timeoutController.dispose();
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _refreshCommands({bool reset = false, int? page}) async {
-    final nextPage = page ?? (reset ? 1 : _currentPage);
-    setState(() => _loadingCommands = true);
-    try {
-      final result = await _commandService.listCommands(
-        hostname: _filterHostname,
-        status: _filterStatus,
-        search: _searchController.text.trim().isEmpty
-            ? null
-            : _searchController.text.trim(),
-        page: nextPage,
-        pageSize: _pageSize,
-      );
-      if (!mounted) return;
-      setState(() {
-        _currentPage = result.page;
-        if (reset || result.page == 1) {
-          _jobs
-            ..clear()
-            ..addAll(result.items);
-        } else {
-          _jobs.addAll(result.items);
-        }
-        _hasMore = result.hasMore;
-      });
-    } catch (_) {
-      // ignore transient errors for now
-    } finally {
-      if (mounted) {
-        setState(() => _loadingCommands = false);
-      }
-    }
-  }
-
-  Future<void> _applyFilters() async {
-    await _refreshCommands(reset: true, page: 1);
-  }
-
-  Future<void> _loadMore() async {
-    if (_hasMore && !_loadingCommands) {
-      await _refreshCommands(page: _currentPage + 1);
-    }
-  }
-
-  void _clearFilters() {
-    setState(() {
-      _filterHostname = null;
-      _filterStatus = null;
-      _searchController.clear();
-    });
-    _applyFilters();
-  }
-
-  Future<void> _submitCommand() async {
-    final host = _targetHost ?? widget.selectedHost?.hostname;
-    if (host == null || host.isEmpty) {
-      setState(() => _formError = '대상 호스트를 선택하세요.');
-      return;
-    }
-    final command = _commandController.text.trim();
-    if (command.isEmpty) {
-      setState(() => _formError = '실행할 명령을 입력하세요.');
-      return;
-    }
-    double? timeout;
-    final timeoutText = _timeoutController.text.trim();
-    if (timeoutText.isNotEmpty) {
-      timeout = double.tryParse(timeoutText);
-    }
-
-    setState(() {
-      _submitting = true;
-      _formError = null;
-    });
-    try {
-      await _commandService.createCommand(
-        hostname: host,
-        command: command,
-        timeoutSeconds: timeout,
-      );
-      _commandController.clear();
-      _timeoutController.clear();
-      await _refreshCommands(reset: true);
-    } catch (error) {
-      setState(() => _formError = '명령 전송 실패: $error');
-    } finally {
-      if (mounted) {
-        setState(() => _submitting = false);
-      }
-    }
-  }
-
-  Color _statusColor(CommandStatus status) {
-    switch (status) {
-      case CommandStatus.pending:
-        return Colors.amberAccent;
-      case CommandStatus.running:
-        return Colors.blueAccent;
-      case CommandStatus.succeeded:
-        return Colors.tealAccent;
-      case CommandStatus.failed:
-        return Colors.redAccent;
-      case CommandStatus.timeout:
-        return Colors.deepOrangeAccent;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hosts = widget.frame.hosts.where((host) => !host.isCore).toList();
-    final headerChips = [
-      _StatusChip(
-        label: '온라인 노드',
-        value: '${widget.frame.onlineHosts}/${widget.frame.totalHosts}',
-      ),
-      _StatusChip(
-        label: '링크 처리량',
-        value: '${widget.frame.estimatedThroughput.toStringAsFixed(1)} Gbps',
-      ),
-      _StatusChip(
-        label: '총 용량',
-        value: '${widget.frame.totalLinkCapacity.toStringAsFixed(1)} Gbps',
-      ),
-      _StatusChip(
-        label: '평균 온도',
-        value: widget.frame.averageCpuTemperature > 0
-            ? '${widget.frame.averageCpuTemperature.toStringAsFixed(1)}℃'
-            : 'N/A',
-      ),
-    ];
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Color(0x22111B2D))),
-        gradient: LinearGradient(
-          colors: [Color(0xFF05070D), Color(0xFF020307)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth > 1180;
-
-          Widget logSection({required bool stretch}) {
-            return _DeckSection(
-              title: '실행 로그',
-              expandChild: stretch,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text('최근 명령'),
-                      const Spacer(),
-                      IconButton(
-                        tooltip: '목록 새로고침',
-                        onPressed: _loadingCommands
-                            ? null
-                            : () => _refreshCommands(reset: true),
-                        icon: const Icon(Icons.refresh, size: 16),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  _buildCommandFilters(hosts),
-                  const SizedBox(height: 12),
-                  if (stretch)
-                    Expanded(child: _buildCommandList(scrollable: true))
-                  else
-                    _buildCommandList(),
-                  if (_hasMore)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: _loadMore,
-                        icon: const Icon(Icons.expand_more),
-                        label: const Text('더 불러오기'),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          }
-
-          final header = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'TACTICAL OPERATIONS',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(spacing: 8, runSpacing: 8, children: headerChips),
-            ],
-          );
-
-          if (isWide) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                header,
-                const SizedBox(height: 20),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: Column(
-                          children: [
-                            _DeckSection(
-                              title: '원격 자동화',
-                              description: '선택한 노드 혹은 지정된 대상에게 명령을 투입합니다.',
-                              child: SingleChildScrollView(
-                                physics: const BouncingScrollPhysics(),
-                                child: _buildCommandForm(widget.selectedHost),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Expanded(
-                              child: _DeckSection(
-                                title: '노드 스냅샷',
-                                child: _buildNodeSnapshot(widget.selectedHost),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 24),
-                      Expanded(flex: 3, child: logSection(stretch: true)),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          }
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              header,
-              const SizedBox(height: 16),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      _DeckSection(
-                        title: '원격 자동화',
-                        description: '선택한 노드 혹은 지정된 대상에게 명령을 투입합니다.',
-                        child: _buildCommandForm(widget.selectedHost),
-                      ),
-                      const SizedBox(height: 16),
-                      _DeckSection(
-                        title: '노드 스냅샷',
-                        child: _buildNodeSnapshot(widget.selectedHost),
-                      ),
-                      const SizedBox(height: 16),
-                      logSection(stretch: false),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildCommandForm(TwinHost? selectedHost) {
-    final hostItems = widget.frame.hosts
-        .where((host) => !host.isCore)
-        .map(
-          (host) => DropdownMenuItem<String>(
-            value: host.hostname,
-            child: Text(host.displayName),
-          ),
-        )
-        .toList();
-
-    final currentValue =
-        _targetHost ??
-        selectedHost?.hostname ??
-        (hostItems.isNotEmpty ? hostItems.first.value : null);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InputDecorator(
-          decoration: const InputDecoration(
-            labelText: '대상 호스트',
-            border: OutlineInputBorder(),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: currentValue,
-              isExpanded: true,
-              items: hostItems,
-              hint: const Text('호스트 선택'),
-              onChanged: (value) => setState(() => _targetHost = value),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _commandController,
-          decoration: const InputDecoration(
-            labelText: '명령어',
-            hintText: '예) ipconfig /all',
-            border: OutlineInputBorder(),
-          ),
-          minLines: 1,
-          maxLines: 2,
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _timeoutController,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: '타임아웃 (초, 선택)',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            ElevatedButton.icon(
-              onPressed: _submitting ? null : _submitCommand,
-              icon: _submitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-              label: const Text('실행'),
-            ),
-            if (_formError != null)
-              Padding(
-                padding: const EdgeInsets.only(left: 12),
-                child: Text(
-                  _formError!,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCommandFilters(List<TwinHost> hosts) {
-    final hostOptions = <DropdownMenuItem<String?>>[
-      const DropdownMenuItem<String?>(value: null, child: Text('전체 호스트')),
-      ...hosts
-          .where((host) => !host.isCore)
-          .map(
-            (host) => DropdownMenuItem<String?>(
-              value: host.hostname,
-              child: Text(host.displayName),
-            ),
-          ),
-    ];
-
-    final statusOptions = <DropdownMenuItem<CommandStatus?>>[
-      const DropdownMenuItem<CommandStatus?>(value: null, child: Text('전체 상태')),
-      ...CommandStatus.values.map(
-        (status) => DropdownMenuItem<CommandStatus?>(
-          value: status,
-          child: Text(_statusLabel(status)),
-        ),
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: '호스트 필터',
-                  border: OutlineInputBorder(),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String?>(
-                    value: _filterHostname,
-                    isExpanded: true,
-                    items: hostOptions,
-                    onChanged: (value) {
-                      setState(() => _filterHostname = value);
-                      _applyFilters();
-                    },
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: '상태',
-                  border: OutlineInputBorder(),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<CommandStatus?>(
-                    value: _filterStatus,
-                    isExpanded: true,
-                    items: statusOptions,
-                    onChanged: (value) {
-                      setState(() => _filterStatus = value);
-                      _applyFilters();
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            labelText: '명령 검색',
-            border: const OutlineInputBorder(),
-            suffixIcon: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  onPressed: _applyFilters,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    _applyFilters();
-                  },
-                ),
-              ],
-            ),
-          ),
-          onSubmitted: (_) => _applyFilters(),
-        ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: _clearFilters,
-            child: const Text('필터 초기화'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNodeSnapshot(TwinHost? host) {
-    if (host == null) {
-      return const Text(
-        '노드를 선택하면 자산 정보가 표시됩니다.',
-        style: TextStyle(color: Colors.white38, fontSize: 13),
-      );
-    }
-
-    final osLabel = _joinNonEmpty([
-      host.hardware.osDistro,
-      host.hardware.osRelease,
-    ], separator: ' ');
-    final hardwareBadges = <Widget>[
-      if (host.hardware.systemModel != null)
-        _InfoPill(icon: Icons.devices_other, label: host.hardware.systemModel!),
-      if (host.hardware.cpuModel != null)
-        _InfoPill(icon: Icons.memory, label: host.hardware.cpuModel!),
-      if (osLabel != 'N/A') _InfoPill(icon: Icons.dns, label: osLabel),
-      _InfoPill(
-        icon: Icons.schedule,
-        label: '업타임 ${_formatDuration(host.uptime)}',
-      ),
-      _InfoPill(icon: Icons.token, label: 'Agent ${host.agentVersion}'),
-    ];
-
-    final processes = host.diagnostics.topProcesses.take(3).toList();
-    final interfaces = host.diagnostics.interfaces;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (host.isDummy)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.amberAccent),
-              color: const Color(0x220D111A),
-            ),
-            child: const Text(
-              '시뮬레이션 노드',
-              style: TextStyle(
-                color: Colors.amberAccent,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        if (hardwareBadges.isNotEmpty)
-          Wrap(spacing: 8, runSpacing: 8, children: hardwareBadges)
-        else
-          const Text(
-            '인벤토리 정보 없음',
-            style: TextStyle(color: Colors.white30, fontSize: 12),
-          ),
-        if (interfaces.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          const Text(
-            '인터페이스',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _InterfaceBadgeBar(interfaces: interfaces),
-        ],
-        if (processes.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          const Text(
-            '상위 프로세스',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...processes.map((process) => _ProcessRow(process: process)),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildCommandList({bool scrollable = false}) {
-    final children = <Widget>[];
-
-    if (_loadingCommands) {
-      children.add(const LinearProgressIndicator());
-      children.add(const SizedBox(height: 8));
-    }
-
-    if (_jobs.isEmpty) {
-      children.add(
-        const Text(
-          '전송된 명령이 없습니다.',
-          style: TextStyle(color: Colors.white54, fontSize: 13),
-        ),
-      );
-    } else {
-      children.addAll(
-        _jobs.map((job) {
-          final color = _statusColor(job.status);
-          final duration = job.duration;
-          String subtitle = '${job.hostname} · ${job.requestedLabel}';
-          if (duration != null) {
-            subtitle += ' · ${duration.inSeconds}s';
-          }
-          if (job.exitCode != null) {
-            subtitle += ' · exit ${job.exitCode}';
-          }
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF1A1F2B)),
-              color: const Color(0xFF0D131E),
-            ),
-            child: ExpansionTile(
-              title: Text(
-                job.command,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              subtitle: Text(
-                subtitle,
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              trailing: Chip(
-                backgroundColor: color.withValues(alpha: 0.15),
-                side: BorderSide.none,
-                label: Text(
-                  job.statusLabel,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-              children: [
-                if (job.stdout != null && job.stdout!.isNotEmpty)
-                  _CommandOutputBlock(label: 'STDOUT', body: job.stdout!),
-                if (job.stderr != null && job.stderr!.isNotEmpty)
-                  _CommandOutputBlock(label: 'STDERR', body: job.stderr!),
-              ],
-            ),
-          );
-        }),
-      );
-    }
-
-    if (scrollable) {
-      return ListView(
-        padding: EdgeInsets.zero,
-        physics: const BouncingScrollPhysics(),
-        children: children,
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    );
-  }
-
-  String _statusLabel(CommandStatus status) {
-    switch (status) {
-      case CommandStatus.pending:
-        return '대기 중';
-      case CommandStatus.running:
-        return '실행 중';
-      case CommandStatus.succeeded:
-        return '성공';
-      case CommandStatus.failed:
-        return '실패';
-      case CommandStatus.timeout:
-        return '시간 초과';
-    }
   }
 }
 
@@ -1667,23 +966,27 @@ class _HostOverlayState extends State<_HostOverlay> {
         ? _historyByHost[host.hostname]?.samples ?? const <_MetricSample>[]
         : const <_MetricSample>[];
 
-    return AnimatedSlide(
-      offset: host == null ? const Offset(0.3, 0) : Offset.zero,
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
-      child: AnimatedOpacity(
-        opacity: host == null ? 0 : 1,
-        duration: const Duration(milliseconds: 240),
-        child: host == null
-            ? const SizedBox.shrink()
-            : _HostOverlayCard(host: host, samples: samples),
-      ),
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 280),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: host == null
+          ? const _HostOverlayPlaceholder(key: ValueKey('empty'))
+          : _HostOverlayCard(
+              key: ValueKey(host.hostname),
+              host: host,
+              samples: samples,
+            ),
     );
   }
 }
 
 class _HostOverlayCard extends StatelessWidget {
-  const _HostOverlayCard({required this.host, required this.samples});
+  const _HostOverlayCard({
+    super.key,
+    required this.host,
+    required this.samples,
+  });
 
   final TwinHost host;
   final List<_MetricSample> samples;
@@ -1691,27 +994,25 @@ class _HostOverlayCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
-    return SizedBox(
-      width: 480,
-      height: 580,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xF00D141F),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0x221B2333)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black54,
-                  blurRadius: 24,
-                  offset: Offset(0, 12),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(20),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xF00D141F),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0x221B2333)),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 24,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(20),
+          child: SingleChildScrollView(
             child: Column(
               children: [
                 _OverlayHeader(host: host, theme: theme),
@@ -1743,6 +1044,27 @@ class _HostOverlayCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _HostOverlayPlaceholder extends StatelessWidget {
+  const _HostOverlayPlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0x221B2333)),
+        color: const Color(0x110D141F),
+      ),
+      alignment: Alignment.center,
+      child: const Text(
+        '노드를 선택하면 시스템 상태가 표시됩니다.',
+        style: TextStyle(color: Colors.white38),
+        textAlign: TextAlign.center,
       ),
     );
   }
@@ -1804,102 +1126,157 @@ class _HostVitalsBar extends StatelessWidget {
       ),
     ];
 
-    return SizedBox(
-      width: 420,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xE6050B16),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0x221B2333)),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black54,
-              blurRadius: 18,
-              offset: Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        host.displayName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xE6050B16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x221B2333)),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black54,
+            blurRadius: 18,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      host.displayName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                       ),
-                      Text(
-                        host.ip,
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 12,
-                        ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      host.ip,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+              if (host.isDummy)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.amberAccent),
+                    color: Colors.black26,
+                  ),
+                  child: const Text(
+                    'DUMMY',
+                    style: TextStyle(
+                      color: Colors.amberAccent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
                   ),
                 ),
-                if (host.isDummy)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: Colors.amberAccent),
-                      color: Colors.black26,
-                    ),
-                    child: const Text(
-                      'DUMMY',
-                      style: TextStyle(
-                        color: Colors.amberAccent,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            osLabel,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Agent ${host.agentVersion}',
+            style: const TextStyle(color: Colors.white30, fontSize: 11),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: stats
+                .map(
+                  (stat) => _VitalStatTile(
+                    icon: stat.icon,
+                    label: stat.label,
+                    value: stat.value,
                   ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              osLabel,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 2,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'Agent ${host.agentVersion}',
-              style: const TextStyle(color: Colors.white30, fontSize: 11),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: stats
-                  .map(
-                    (stat) => _VitalStatTile(
-                      icon: stat.icon,
-                      label: stat.label,
-                      value: stat.value,
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
-        ),
+                )
+                .toList(),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _SelectedTelemetryPanel extends StatelessWidget {
+  const _SelectedTelemetryPanel({required this.host});
+
+  final TwinHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    final temp = host.cpuTemperature ?? host.gpuTemperature;
+    final capacity = host.metrics.netCapacityGbps;
+    final throughput = host.metrics.netThroughputGbps ?? 0;
+    final memCaption =
+        host.memoryTotalBytes != null && host.memoryUsedBytes != null
+        ? '${_formatBytes(host.memoryUsedBytes)} / ${_formatBytes(host.memoryTotalBytes)}'
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _MetricProgressRow(
+          icon: Icons.speed,
+          label: 'CPU 사용률',
+          value: '${host.metrics.cpuLoad.toStringAsFixed(1)}%',
+          progress: host.metrics.cpuLoad / 100,
+          caption: '실시간',
+        ),
+        const SizedBox(height: 12),
+        _MetricProgressRow(
+          icon: Icons.memory,
+          label: '메모리 사용률',
+          value: '${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%',
+          progress: host.metrics.memoryUsedPercent / 100,
+          caption: memCaption,
+        ),
+        const SizedBox(height: 12),
+        _MetricProgressRow(
+          icon: Icons.thermostat,
+          label: '온도',
+          value: temp != null ? '${temp.toStringAsFixed(1)}℃' : '센서 없음',
+          progress: temp != null ? (temp / 110).clamp(0.0, 1.0) : null,
+          caption: temp != null ? '센서 실측' : null,
+        ),
+        const SizedBox(height: 12),
+        _MetricProgressRow(
+          icon: Icons.network_check,
+          label: '네트워크',
+          value: capacity != null
+              ? '${throughput.toStringAsFixed(2)} / ${capacity.toStringAsFixed(1)} Gbps'
+              : '${throughput.toStringAsFixed(2)} Gbps',
+          progress: capacity != null && capacity > 0
+              ? (throughput / capacity).clamp(0.0, 1.0)
+              : null,
+          caption: capacity != null ? '링크 용량' : '용량 정보 없음',
+        ),
+      ],
     );
   }
 }
@@ -2241,53 +1618,6 @@ class _GlassTile extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(14),
       child: child,
-    );
-  }
-}
-
-class _DeckSection extends StatelessWidget {
-  const _DeckSection({
-    required this.title,
-    required this.child,
-    this.description,
-    this.expandChild = false,
-  });
-
-  final String title;
-  final String? description;
-  final Widget child;
-  final bool expandChild;
-
-  @override
-  Widget build(BuildContext context) {
-    final content = <Widget>[
-      Text(
-        title,
-        style: const TextStyle(
-          color: Colors.white70,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    ];
-    if (description != null) {
-      content.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            description!,
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
-          ),
-        ),
-      );
-    }
-    content.add(const SizedBox(height: 12));
-    content.add(expandChild ? Expanded(child: child) : child);
-
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: content,
-      ),
     );
   }
 }
@@ -3049,50 +2379,6 @@ class _MetricSample {
   final double memory;
   final double? throughput;
   final double? temperature;
-}
-
-class _CommandOutputBlock extends StatelessWidget {
-  const _CommandOutputBlock({required this.label, required this.body});
-
-  final String label;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A131F),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF1F2A3A)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-              fontSize: 11,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            body.trim().isEmpty ? '(출력 없음)' : body.trim(),
-            style: const TextStyle(
-              color: Colors.white60,
-              fontFamily: 'monospace',
-              fontSize: 11,
-              height: 1.3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _TwinScenePainter extends CustomPainter {
