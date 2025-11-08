@@ -2392,7 +2392,7 @@ class _ProcessPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final processes = host.diagnostics.topProcesses
-        .take(3)
+        .take(6)
         .toList(growable: false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2451,7 +2451,7 @@ class _StoragePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final disks = host.diagnostics.disks.take(2).toList(growable: false);
+    final disks = host.diagnostics.disks.take(4).toList(growable: false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2652,7 +2652,7 @@ const Map<SidebarWidgetType, _WidgetBlueprint> _widgetBlueprints = {
     description: 'CPU 사용량 기준 상위 프로세스를 보여줍니다.',
     allowedWings: {SidebarWing.right},
     widthUnits: 4,
-    heightUnits: 2,
+    heightUnits: 3,
     requiresHost: true,
     builder: _buildProcessWidget,
   ),
@@ -2672,7 +2672,7 @@ const Map<SidebarWidgetType, _WidgetBlueprint> _widgetBlueprints = {
     description: '스토리지 볼륨과 사용량을 표시합니다.',
     allowedWings: {SidebarWing.right},
     widthUnits: 4,
-    heightUnits: 2,
+    heightUnits: 3,
     requiresHost: true,
     builder: _buildStorageWidget,
   ),
