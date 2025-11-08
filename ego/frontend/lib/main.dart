@@ -1000,6 +1000,12 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
         )
         .toList();
 
+    const inputDecoration = InputDecoration(
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      border: OutlineInputBorder(),
+    );
+
     return _GlassTile(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1011,12 +1017,9 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           InputDecorator(
-            decoration: const InputDecoration(
-              labelText: '대상 노드',
-              border: OutlineInputBorder(),
-            ),
+            decoration: inputDecoration.copyWith(labelText: '대상 노드'),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: _selectedHostname ?? hostItems.first.value,
@@ -1025,27 +1028,23 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           TextField(
             controller: _commandController,
-            decoration: const InputDecoration(
+            decoration: inputDecoration.copyWith(
               labelText: '명령어',
               hintText: '예) ipconfig /all',
-              border: OutlineInputBorder(),
             ),
             minLines: 1,
             maxLines: 2,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           TextField(
             controller: _timeoutController,
-            decoration: const InputDecoration(
-              labelText: '타임아웃(초, 선택)',
-              border: OutlineInputBorder(),
-            ),
+            decoration: inputDecoration.copyWith(labelText: '타임아웃(초, 선택)'),
             keyboardType: TextInputType.number,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Row(
             children: [
               ElevatedButton.icon(
@@ -1072,9 +1071,9 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
                 ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           if (_loading) const LinearProgressIndicator(minHeight: 2),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           if (visibleJobs.isEmpty)
             const Text(
               '명령 기록이 없습니다.',
@@ -1119,7 +1118,7 @@ class _CommandJobTile extends StatelessWidget {
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
                   ),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -1172,6 +1171,8 @@ class _InfoPill extends StatelessWidget {
               fontSize: 11,
               fontWeight: FontWeight.w500,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -1292,6 +1293,7 @@ class _HostChip extends StatelessWidget {
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -1307,10 +1309,14 @@ class _HostChip extends StatelessWidget {
             Text(
               'CPU ${host.metrics.cpuLoad.toStringAsFixed(1)}% · RAM ${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%',
               style: const TextStyle(color: Colors.white60, fontSize: 11),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             if (host.metrics.netThroughputGbps != null)
               Text(
                 '${host.metrics.netThroughputGbps!.toStringAsFixed(2)} Gbps',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.tealAccent, fontSize: 11),
               ),
           ],
@@ -1337,11 +1343,15 @@ class _OverlayHeader extends StatelessWidget {
             children: [
               Text(
                 host.displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: theme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
               Text(
                 host.ip,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white54, fontSize: 12),
               ),
             ],
@@ -2048,6 +2058,8 @@ class _LinkStatusPanel extends StatelessWidget {
       children: [
         Text(
           title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: Colors.white70,
             fontWeight: FontWeight.w600,
@@ -2056,6 +2068,8 @@ class _LinkStatusPanel extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           primaryValue,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 20,
@@ -2067,6 +2081,8 @@ class _LinkStatusPanel extends StatelessWidget {
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               caption!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
           ),
@@ -2110,6 +2126,8 @@ class _TemperaturePanel extends StatelessWidget {
       children: [
         Text(
           title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: Colors.white70,
             fontWeight: FontWeight.w600,
@@ -2118,6 +2136,8 @@ class _TemperaturePanel extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           primaryLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 20,
@@ -2127,6 +2147,8 @@ class _TemperaturePanel extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           secondaryLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: Colors.white54, fontSize: 12),
         ),
         if (progress != null)
@@ -2230,6 +2252,8 @@ class _DiskUsageBar extends StatelessWidget {
           Text(
             '${disk.device} · ${disk.mountpoint}',
             style: const TextStyle(color: Colors.white70, fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 4),
           ClipRRect(
@@ -2251,6 +2275,8 @@ class _DiskUsageBar extends StatelessWidget {
                 ? '${usagePercent.toStringAsFixed(1)}% 사용${usageText != null ? ' · $usageText' : ''}'
                 : (usageText ?? '사용량 N/A'),
             style: const TextStyle(color: Colors.white38, fontSize: 10),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -3201,7 +3227,6 @@ class _DockedWidgetTile extends StatelessWidget {
       heightUnits: placement.heightUnits,
       allowedWings: blueprint.allowedWings,
     );
-    final sizeLabel = '${blueprint.widthUnits}×${blueprint.heightUnits}';
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 240),
@@ -3233,12 +3258,6 @@ class _DockedWidgetTile extends StatelessWidget {
                   },
                 ),
               ),
-            ),
-            Positioned(
-              top: 6,
-              left: 0,
-              right: 0,
-              child: Center(child: _SizeBadge(label: sizeLabel)),
             ),
             Positioned(
               right: 6,
@@ -3297,28 +3316,6 @@ class _DockGripIcon extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: const Icon(Icons.drag_indicator, size: 16, color: Colors.white54),
-    );
-  }
-}
-
-class _SizeBadge extends StatelessWidget {
-  const _SizeBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0x330C1A2A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0x221B2333)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(color: Colors.white54, fontSize: 11),
-      ),
     );
   }
 }
@@ -3485,9 +3482,27 @@ class _WidgetPaletteChip extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            blueprint.displayName,
-            style: const TextStyle(fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  blueprint.displayName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0x220C1A2A),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0x331B2333)),
+                ),
+                child: Text(
+                  '${blueprint.widthUnits}×${blueprint.heightUnits}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 10),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
