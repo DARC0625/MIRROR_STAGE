@@ -101,7 +101,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
   late final bool _ownsChannel;
   late final Stream<TwinStateFrame> _stream;
   TwinStateFrame? _lastFrame;
-  TwinViewportMode _viewportMode = TwinViewportMode.topology;
+  final TwinViewportMode _viewportMode = TwinViewportMode.topology;
   String? _selectedHostName;
 
   @override
@@ -118,11 +118,6 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
       _channel.dispose();
     }
     super.dispose();
-  }
-
-  void _setViewportMode(TwinViewportMode mode) {
-    if (_viewportMode == mode) return;
-    setState(() => _viewportMode = mode);
   }
 
   void _selectHost(String hostname) {
@@ -176,8 +171,6 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                 );
                 final leftPanel = _Sidebar(
                   frame: frame,
-                  mode: _viewportMode,
-                  onModeChange: _setViewportMode,
                   selectedHost: selectedHost,
                 );
                 final rightPanel = _StatusSidebar(
@@ -228,16 +221,9 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
 }
 
 class _Sidebar extends StatefulWidget {
-  const _Sidebar({
-    required this.frame,
-    required this.mode,
-    required this.onModeChange,
-    required this.selectedHost,
-  });
+  const _Sidebar({required this.frame, required this.selectedHost});
 
   final TwinStateFrame frame;
-  final TwinViewportMode mode;
-  final ValueChanged<TwinViewportMode> onModeChange;
   final TwinHost? selectedHost;
 
   @override
@@ -251,7 +237,7 @@ class _SidebarState extends State<_Sidebar> {
   @override
   void initState() {
     super.initState();
-    _controller = PageController(viewportFraction: 0.92);
+    _controller = PageController();
   }
 
   @override
@@ -275,7 +261,6 @@ class _SidebarState extends State<_Sidebar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
-
     final pages = _buildPages();
 
     return Container(
@@ -293,13 +278,8 @@ class _SidebarState extends State<_Sidebar> {
           Row(
             children: [
               Text(
-                'MIRROR STAGE OPS',
+                'MIRROR STAGE',
                 style: theme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const Spacer(),
-              _ViewModeToggle(
-                mode: widget.mode,
-                onModeChange: widget.onModeChange,
               ),
             ],
           ),
@@ -309,13 +289,12 @@ class _SidebarState extends State<_Sidebar> {
               borderRadius: BorderRadius.circular(24),
               child: PageView.builder(
                 controller: _controller,
-                physics: const BouncingScrollPhysics(),
-                padEnds: false,
+                physics: const PageScrollPhysics(),
                 itemCount: pages.length,
                 onPageChanged: (value) => setState(() => _currentPage = value),
                 itemBuilder: (context, index) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: pages[index],
+                  child: SizedBox.expand(child: pages[index]),
                 ),
               ),
             ),
@@ -352,55 +331,6 @@ class _SidebarState extends State<_Sidebar> {
       cards.add(const _GlassTile(child: _SidebarPlaceholder()));
     }
     return cards;
-  }
-}
-
-class _ViewModeToggle extends StatelessWidget {
-  const _ViewModeToggle({required this.mode, required this.onModeChange});
-
-  final TwinViewportMode mode;
-  final ValueChanged<TwinViewportMode> onModeChange;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0x331B2333)),
-      ),
-      child: ToggleButtons(
-        isSelected: [
-          mode == TwinViewportMode.topology,
-          mode == TwinViewportMode.heatmap,
-        ],
-        onPressed: (index) => onModeChange(TwinViewportMode.values[index]),
-        borderRadius: BorderRadius.circular(999),
-        constraints: const BoxConstraints(minHeight: 38, minWidth: 110),
-        fillColor: const Color(0xFF0D2032),
-        selectedColor: Colors.tealAccent,
-        color: Colors.white70,
-        borderColor: Colors.transparent,
-        selectedBorderColor: Colors.tealAccent.withValues(alpha: 0.4),
-        children: const [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.travel_explore, size: 16),
-              SizedBox(width: 6),
-              Text('토폴로지'),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.heat_pump, size: 16),
-              SizedBox(width: 6),
-              Text('히트맵'),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -2810,10 +2740,18 @@ class _TwinScenePainter extends CustomPainter {
 
       final radius = hostBubbleRadius(host);
 
-      final nodePaint = Paint()
-        ..color = color.withValues(alpha: isCore ? 0.9 : 0.75)
-        ..style = PaintingStyle.fill;
+      final glowPaint = Paint()
+        ..color = color.withValues(alpha: isSelected ? 0.45 : 0.25)
+        ..style = PaintingStyle.fill
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 18);
+      canvas.drawCircle(position, radius + (isSelected ? 16 : 12), glowPaint);
 
+      final nodePaint = Paint()
+        ..shader = ui.Gradient.radial(position, radius + 4, [
+          Colors.white.withValues(alpha: 0.9),
+          color.withValues(alpha: isCore ? 0.95 : 0.7),
+        ])
+        ..style = PaintingStyle.fill;
       canvas.drawCircle(position, radius, nodePaint);
 
       if (isSelected) {
@@ -2835,6 +2773,15 @@ class _TwinScenePainter extends CustomPainter {
             ..strokeWidth = 1.2,
         );
       }
+
+      canvas.drawCircle(
+        position,
+        radius * 0.55,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.4)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
 
       if (host.isDummy && !isCore) {
         final markerPath = Path()
