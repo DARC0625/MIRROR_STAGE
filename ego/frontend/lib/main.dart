@@ -2656,7 +2656,7 @@ class _StoragePanel extends StatelessWidget {
 // === Widget dock system =====================================================
 
 const int _kDockColumns = 4;
-const int _kDockRows = 10;
+const int _kDockRows = 13;
 
 const List<_WidgetPlacementSeed> _defaultDockPlacements = [
   _WidgetPlacementSeed(
@@ -3155,12 +3155,17 @@ class _WidgetGridPanelState extends State<_WidgetGridPanel> {
               );
             }
 
+            final panelHeight = math.min(
+              spec.totalHeight,
+              constraints.maxHeight,
+            );
+
             return Align(
-              alignment: Alignment.topCenter,
+              alignment: Alignment.center,
               child: SizedBox(
                 key: _gridKey,
                 width: constraints.maxWidth,
-                height: spec.totalHeight,
+                height: panelHeight,
                 child: DragTarget<_DockDragPayload>(
                   onWillAcceptWithDetails: (details) =>
                       details.data.allowedWings.contains(widget.wing),
@@ -3613,10 +3618,18 @@ class _GridSpec {
   static _GridSpec compute(BoxConstraints constraints) {
     const padding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
     const gap = 12.0;
-    final available =
+    final widthAvailable =
         (constraints.maxWidth - padding.horizontal) - gap * (_kDockColumns - 1);
-    final usableWidth = math.max(160.0, available);
-    final cellSize = usableWidth / _kDockColumns;
+    final usableWidth = math.max(160.0, widthAvailable);
+    final sizeFromWidth = usableWidth / _kDockColumns;
+
+    final heightAvailable =
+        (constraints.maxHeight - padding.vertical) - gap * (_kDockRows - 1);
+    final sizeFromHeight = heightAvailable > 0
+        ? heightAvailable / _kDockRows
+        : sizeFromWidth;
+
+    final cellSize = math.max(20.0, math.min(sizeFromWidth, sizeFromHeight));
     return _GridSpec(
       cellSize: cellSize,
       padding: padding,
