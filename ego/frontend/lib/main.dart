@@ -211,7 +211,7 @@ class _SidebarState extends State<_Sidebar> {
   @override
   void initState() {
     super.initState();
-    _controller = PageController(viewportFraction: 0.9);
+    _controller = PageController(viewportFraction: 0.92);
   }
 
   @override
@@ -286,6 +286,8 @@ class _SidebarState extends State<_Sidebar> {
           Expanded(
             child: PageView.builder(
               controller: _controller,
+              physics: const BouncingScrollPhysics(),
+              clipBehavior: Clip.none,
               itemCount: pages.length,
               onPageChanged: (value) => setState(() => _currentPage = value),
               itemBuilder: (context, index) => Padding(
@@ -297,7 +299,19 @@ class _SidebarState extends State<_Sidebar> {
           if (pages.length > 1)
             Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: _DotsIndicator(count: pages.length, index: _currentPage),
+              child: _DotsIndicator(
+                count: pages.length,
+                index: _currentPage,
+                onSelected: (value) {
+                  if (value == _currentPage) return;
+                  setState(() => _currentPage = value);
+                  _controller.animateToPage(
+                    value,
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+              ),
             ),
         ],
       ),
@@ -947,30 +961,42 @@ class _SidebarPlaceholder extends StatelessWidget {
 }
 
 class _DotsIndicator extends StatelessWidget {
-  const _DotsIndicator({required this.count, required this.index});
+  const _DotsIndicator({
+    required this.count,
+    required this.index,
+    this.onSelected,
+  });
 
   final int count;
   final int index;
+  final ValueChanged<int>? onSelected;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(
-        count,
-        (i) => AnimatedContainer(
+      children: List.generate(count, (i) {
+        final isActive = i == index;
+        final dot = AnimatedContainer(
           duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
           margin: const EdgeInsets.symmetric(horizontal: 4),
-          width: i == index ? 18 : 8,
+          width: isActive ? 18 : 8,
           height: 8,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            color: i == index
+            color: isActive
                 ? Colors.tealAccent
                 : Colors.white.withValues(alpha: 0.25),
           ),
-        ),
-      ),
+        );
+        if (onSelected == null) return dot;
+        return GestureDetector(
+          onTap: () => onSelected?.call(i),
+          behavior: HitTestBehavior.opaque,
+          child: dot,
+        );
+      }),
     );
   }
 }
@@ -1150,6 +1176,8 @@ class _HostOverlayCardState extends State<_HostOverlayCard> {
               Expanded(
                 child: PageView.builder(
                   controller: _controller,
+                  physics: const BouncingScrollPhysics(),
+                  clipBehavior: Clip.none,
                   itemCount: sections.length,
                   onPageChanged: (value) => setState(() => _page = value),
                   itemBuilder: (context, index) => Padding(
@@ -1161,7 +1189,19 @@ class _HostOverlayCardState extends State<_HostOverlayCard> {
               if (sections.length > 1)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: _DotsIndicator(count: sections.length, index: _page),
+                  child: _DotsIndicator(
+                    count: sections.length,
+                    index: _page,
+                    onSelected: (value) {
+                      if (value == _page) return;
+                      setState(() => _page = value);
+                      _controller.animateToPage(
+                        value,
+                        duration: const Duration(milliseconds: 320),
+                        curve: Curves.easeOutCubic,
+                      );
+                    },
+                  ),
                 ),
             ],
           ),
