@@ -15,8 +15,12 @@ enum SidebarWing { left, right }
 
 enum SidebarWidgetType {
   globalMetrics,
+  globalLink,
+  globalTemperature,
   commandConsole,
   telemetry,
+  hostLink,
+  hostTemperature,
   processes,
   network,
   storage,
@@ -779,101 +783,58 @@ class _SidebarOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final widgets = [
-      _InfoWidgetConfig(
-        title: '평균 CPU',
-        child: _AnalogGauge(
-          label: '평균 CPU',
-          value: frame.averageCpuLoad.clamp(0, 100).toDouble(),
-          maxValue: 100,
-          units: '%',
-          decimals: 1,
-          startColor: Colors.lightBlueAccent,
-          endColor: Colors.deepOrangeAccent,
-          subtitle: frame.averageCpuTemperature > 0
-              ? '온도 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃'
-              : null,
-          size: 120,
-        ),
-      ),
-      _InfoWidgetConfig(
-        title: '메모리 사용률',
-        child: _AnalogGauge(
-          label: '메모리',
-          value: frame.memoryUtilizationPercent.clamp(0, 100).toDouble(),
-          maxValue: 100,
-          units: '%',
-          decimals: 1,
-          startColor: const Color(0xFF38BDF8),
-          endColor: Colors.deepOrangeAccent,
-          subtitle: frame.totalMemoryCapacityGb > 0
-              ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
-              : null,
-          size: 120,
-        ),
-      ),
-      _InfoWidgetConfig(
-        title: '링크 상태',
-        child: _TrendTile(
-          value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
-          caption: frame.totalLinkCapacity > 0
-              ? '용량 ${frame.totalLinkCapacity.toStringAsFixed(2)} Gbps'
-              : '용량 정보 없음',
-          trend: (frame.linkUtilization * 100).clamp(0.0, 100.0),
-        ),
-      ),
-      _InfoWidgetConfig(
-        title: '온도',
-        child: _TrendTile(
-          value: frame.maxCpuTemperature > 0
-              ? '${frame.maxCpuTemperature.toStringAsFixed(1)}℃'
-              : 'N/A',
-          caption: '평균 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃',
-          trend: (frame.averageCpuTemperature / 110).clamp(0.0, 1.0) * 100,
-        ),
-      ),
-    ];
+    final avgCpu = frame.averageCpuLoad.clamp(0, 100).toDouble();
+    final memUtil = frame.memoryUtilizationPercent.clamp(0, 100).toDouble();
+    final memCaption = frame.totalMemoryCapacityGb > 0
+        ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
+        : null;
 
-    return SingleChildScrollView(
-      child: _GlassTile(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '전역 메트릭',
-              style: TextStyle(
-                color: Colors.white70,
-                fontWeight: FontWeight.w600,
+    return _GlassTile(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '전역 메트릭',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _AnalogGauge(
+                  label: '평균 CPU',
+                  value: avgCpu,
+                  maxValue: 100,
+                  units: '%',
+                  decimals: 1,
+                  subtitle: frame.averageCpuTemperature > 0
+                      ? '온도 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃'
+                      : null,
+                  startColor: Colors.lightBlueAccent,
+                  endColor: Colors.deepOrangeAccent,
+                  size: 110,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: widgets
-                  .map(
-                    (config) => SizedBox(
-                      width: 200,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            config.title,
-                            style: const TextStyle(
-                              color: Colors.white54,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          config.child,
-                        ],
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
-        ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _AnalogGauge(
+                  label: '메모리 사용률',
+                  value: memUtil,
+                  maxValue: 100,
+                  units: '%',
+                  decimals: 1,
+                  subtitle: memCaption,
+                  startColor: const Color(0xFF38BDF8),
+                  endColor: Colors.pinkAccent,
+                  size: 110,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1016,6 +977,7 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
   @override
   Widget build(BuildContext context) {
     final hosts = widget.frame.hosts.where((host) => !host.isCore).toList();
+    final visibleJobs = _jobs.take(2).toList(growable: false);
     if (hosts.isEmpty) {
       return _GlassTile(
         child: SizedBox(
@@ -1113,13 +1075,13 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
           const SizedBox(height: 8),
           if (_loading) const LinearProgressIndicator(minHeight: 2),
           const SizedBox(height: 8),
-          if (_jobs.isEmpty)
+          if (visibleJobs.isEmpty)
             const Text(
               '명령 기록이 없습니다.',
               style: TextStyle(color: Colors.white38, fontSize: 12),
             )
           else
-            ..._jobs.map(
+            ...visibleJobs.map(
               (job) =>
                   _CommandJobTile(color: _statusColor(job.status), job: job),
             ),
@@ -1413,12 +1375,6 @@ class _RealtimeTelemetryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final latest = samples.isNotEmpty ? samples.last : null;
-    final throughput =
-        host.metrics.netThroughputGbps ?? latest?.throughput ?? 0;
-    final capacity = host.metrics.netCapacityGbps;
-    final temperature =
-        host.cpuTemperature ?? host.gpuTemperature ?? latest?.temperature;
     final uptimeText = _formatDuration(host.uptime);
     final memorySubtitle =
         host.memoryUsedBytes != null && host.memoryTotalBytes != null
@@ -1478,285 +1434,15 @@ class _RealtimeTelemetryCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          _MetricProgressRow(
-            icon: Icons.device_thermostat,
-            label: '온도',
-            value: temperature != null
-                ? '${temperature.toStringAsFixed(1)}℃'
-                : 'N/A',
-            progress: temperature != null
-                ? (temperature / 110).clamp(0.0, 1.0)
-                : null,
-            caption: temperature != null ? '센서 실측' : '센서 데이터 없음',
-          ),
           const SizedBox(height: 12),
-          _MetricProgressRow(
-            icon: Icons.network_check,
-            label: '네트워크',
-            value: throughput > 0
-                ? '${throughput.toStringAsFixed(2)} Gbps'
-                : 'N/A',
-            progress: capacity != null && capacity > 0
-                ? (throughput / capacity).clamp(0.0, 1.0)
-                : null,
-            caption: capacity != null
-                ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
-                : '용량 정보 없음',
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _SparklineChart(
-                  label: 'CPU 히스토리',
-                  unit: '%',
-                  color: Colors.tealAccent,
-                  samples: samples,
-                  selector: (sample) => sample.cpu,
-                  precision: 1,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _SparklineChart(
-                  label: '스루풋',
-                  unit: 'Gbps',
-                  color: Colors.deepOrangeAccent,
-                  samples: samples,
-                  selector: (sample) => sample.throughput,
-                ),
-              ),
-            ],
+          Text(
+            '업타임 $uptimeText',
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
           ),
         ],
       ),
     );
   }
-}
-
-class _MetricProgressRow extends StatelessWidget {
-  const _MetricProgressRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.progress,
-    this.caption,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final double? progress;
-  final String? caption;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 16, color: Colors.white54),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-            const Spacer(),
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        if (progress != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress!.clamp(0.0, 1.0),
-                minHeight: 6,
-                backgroundColor: const Color(0xFF101826),
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  Colors.tealAccent.withValues(alpha: 0.75),
-                ),
-              ),
-            ),
-          ),
-        if (caption != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              caption!,
-              style: const TextStyle(color: Colors.white38, fontSize: 11),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _SparklineChart extends StatelessWidget {
-  const _SparklineChart({
-    required this.label,
-    required this.unit,
-    required this.color,
-    required this.samples,
-    required this.selector,
-    this.precision = 2,
-  });
-
-  final String label;
-  final String unit;
-  final Color color;
-  final List<_MetricSample> samples;
-  final double? Function(_MetricSample sample) selector;
-  final int precision;
-
-  @override
-  Widget build(BuildContext context) {
-    final current = samples.isNotEmpty ? selector(samples.last) : null;
-    final valueText = current != null && current.isFinite
-        ? '${current.toStringAsFixed(precision)} $unit'
-        : 'N/A';
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF080F1C),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF111B2B)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          Text(
-            valueText,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 60,
-            child: CustomPaint(
-              painter: _SparklinePainter(
-                samples: samples,
-                selector: selector,
-                color: color,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SparklinePainter extends CustomPainter {
-  const _SparklinePainter({
-    required this.samples,
-    required this.selector,
-    required this.color,
-  });
-
-  final List<_MetricSample> samples;
-  final double? Function(_MetricSample sample) selector;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (samples.isEmpty) {
-      _drawBaseline(canvas, size);
-      return;
-    }
-
-    final values = <double>[];
-    for (final sample in samples) {
-      final value = selector(sample);
-      if (value != null && value.isFinite) {
-        values.add(value);
-      }
-    }
-    if (values.isEmpty) {
-      _drawBaseline(canvas, size);
-      return;
-    }
-
-    final minValue = values.reduce(math.min);
-    final maxValue = values.reduce(math.max);
-    final range = (maxValue - minValue).abs() < 0.001
-        ? (maxValue == 0 ? 1 : maxValue.abs())
-        : (maxValue - minValue);
-
-    final points = <Offset>[];
-    final total = samples.length;
-    for (var i = 0; i < total; i++) {
-      final value = selector(samples[i]);
-      if (value == null || !value.isFinite) continue;
-      final normalized = ((value - minValue) / range).clamp(0.0, 1.0);
-      final x = total == 1 ? 0.0 : (i / (total - 1)) * size.width;
-      final y = size.height - (normalized * size.height);
-      points.add(Offset(x, y));
-    }
-
-    if (points.length < 2) {
-      _drawBaseline(canvas, size);
-      return;
-    }
-
-    final path = Path()..moveTo(points.first.dx, points.first.dy);
-    for (var i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
-    }
-
-    final stroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..isAntiAlias = true;
-    canvas.drawPath(path, stroke);
-
-    final fillPath = Path.from(path)
-      ..lineTo(points.last.dx, size.height)
-      ..lineTo(points.first.dx, size.height)
-      ..close();
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        colors: [color.withValues(alpha: 0.35), Colors.transparent],
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    canvas.drawPath(fillPath, fillPaint);
-  }
-
-  void _drawBaseline(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.2)
-      ..strokeWidth = 1.5;
-    canvas.drawLine(
-      Offset(0, size.height - 2),
-      Offset(size.width, size.height - 2),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SparklinePainter oldDelegate) => true;
 }
 
 class _MetricHistoryBuffer {
@@ -2342,19 +2028,18 @@ class _GlassTile extends StatelessWidget {
   }
 }
 
-class _InfoWidgetConfig {
-  const _InfoWidgetConfig({required this.title, required this.child});
+class _LinkStatusPanel extends StatelessWidget {
+  const _LinkStatusPanel({
+    required this.title,
+    required this.primaryValue,
+    this.caption,
+    this.utilization,
+  });
 
   final String title;
-  final Widget child;
-}
-
-class _TrendTile extends StatelessWidget {
-  const _TrendTile({required this.value, this.caption, required this.trend});
-
-  final String value;
+  final String primaryValue;
   final String? caption;
-  final double trend;
+  final double? utilization;
 
   @override
   Widget build(BuildContext context) {
@@ -2362,10 +2047,18 @@ class _TrendTile extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          value,
+          title,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          primaryValue,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 18,
+            fontSize: 20,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -2374,33 +2067,84 @@ class _TrendTile extends StatelessWidget {
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               caption!,
-              style: const TextStyle(color: Colors.white54, fontSize: 11),
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
           ),
-        const SizedBox(height: 8),
-        _TrendBar(percent: trend),
+        if (utilization != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: utilization!.clamp(0.0, 1.0),
+                minHeight: 8,
+                backgroundColor: const Color(0xFF101826),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  Colors.tealAccent,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
 }
 
-class _TrendBar extends StatelessWidget {
-  const _TrendBar({required this.percent});
+class _TemperaturePanel extends StatelessWidget {
+  const _TemperaturePanel({
+    required this.title,
+    required this.primaryLabel,
+    required this.secondaryLabel,
+    this.progress,
+  });
 
-  final double percent;
+  final String title;
+  final String primaryLabel;
+  final String secondaryLabel;
+  final double? progress;
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: LinearProgressIndicator(
-        value: (percent / 100).clamp(0.0, 1.0),
-        minHeight: 6,
-        backgroundColor: const Color(0xFF111B2B),
-        valueColor: AlwaysStoppedAnimation<Color>(
-          Colors.tealAccent.withValues(alpha: 0.8),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Text(
+          primaryLabel,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          secondaryLabel,
+          style: const TextStyle(color: Colors.white54, fontSize: 12),
+        ),
+        if (progress != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress!.clamp(0.0, 1.0),
+                minHeight: 8,
+                backgroundColor: const Color(0xFF101826),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  Colors.deepOrangeAccent,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -2573,7 +2317,7 @@ class _ProcessPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final processes = host.diagnostics.topProcesses
-        .take(4)
+        .take(3)
         .toList(growable: false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2603,7 +2347,7 @@ class _InterfacePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final interfaces = host.diagnostics.interfaces
-        .take(3)
+        .take(2)
         .toList(growable: false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2632,7 +2376,7 @@ class _StoragePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final disks = host.diagnostics.disks.take(3).toList(growable: false);
+    final disks = host.diagnostics.disks.take(2).toList(growable: false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2656,7 +2400,7 @@ class _StoragePanel extends StatelessWidget {
 // === Widget dock system =====================================================
 
 const int _kDockColumns = 4;
-const int _kDockRows = 13;
+const int _kDockRows = 14;
 
 const List<_WidgetPlacementSeed> _defaultDockPlacements = [
   _WidgetPlacementSeed(
@@ -2666,10 +2410,22 @@ const List<_WidgetPlacementSeed> _defaultDockPlacements = [
     row: 0,
   ),
   _WidgetPlacementSeed(
-    type: SidebarWidgetType.commandConsole,
+    type: SidebarWidgetType.globalLink,
     wing: SidebarWing.left,
     column: 0,
     row: 4,
+  ),
+  _WidgetPlacementSeed(
+    type: SidebarWidgetType.globalTemperature,
+    wing: SidebarWing.left,
+    column: 0,
+    row: 6,
+  ),
+  _WidgetPlacementSeed(
+    type: SidebarWidgetType.commandConsole,
+    wing: SidebarWing.left,
+    column: 0,
+    row: 8,
   ),
   _WidgetPlacementSeed(
     type: SidebarWidgetType.telemetry,
@@ -2678,22 +2434,34 @@ const List<_WidgetPlacementSeed> _defaultDockPlacements = [
     row: 0,
   ),
   _WidgetPlacementSeed(
-    type: SidebarWidgetType.processes,
+    type: SidebarWidgetType.hostLink,
     wing: SidebarWing.right,
     column: 0,
     row: 4,
   ),
   _WidgetPlacementSeed(
+    type: SidebarWidgetType.hostTemperature,
+    wing: SidebarWing.right,
+    column: 0,
+    row: 6,
+  ),
+  _WidgetPlacementSeed(
+    type: SidebarWidgetType.processes,
+    wing: SidebarWing.right,
+    column: 0,
+    row: 8,
+  ),
+  _WidgetPlacementSeed(
     type: SidebarWidgetType.network,
     wing: SidebarWing.right,
     column: 0,
-    row: 7,
+    row: 10,
   ),
   _WidgetPlacementSeed(
     type: SidebarWidgetType.storage,
     wing: SidebarWing.right,
     column: 0,
-    row: 9,
+    row: 12,
   ),
 ];
 
@@ -2740,11 +2508,29 @@ const Map<SidebarWidgetType, _WidgetBlueprint> _widgetBlueprints = {
   SidebarWidgetType.globalMetrics: _WidgetBlueprint(
     type: SidebarWidgetType.globalMetrics,
     displayName: '전역 지표',
-    description: '클러스터의 평균 부하와 온도, 링크를 한눈에 요약합니다.',
+    description: '클러스터 CPU·메모리 부하를 요약합니다.',
     allowedWings: {SidebarWing.left},
     widthUnits: 4,
     heightUnits: 4,
     builder: _buildGlobalMetricsWidget,
+  ),
+  SidebarWidgetType.globalLink: _WidgetBlueprint(
+    type: SidebarWidgetType.globalLink,
+    displayName: '링크 상태',
+    description: '전체 트래픽과 용량 대비 활용률을 표시합니다.',
+    allowedWings: {SidebarWing.left},
+    widthUnits: 4,
+    heightUnits: 2,
+    builder: _buildGlobalLinkWidget,
+  ),
+  SidebarWidgetType.globalTemperature: _WidgetBlueprint(
+    type: SidebarWidgetType.globalTemperature,
+    displayName: '온도 현황',
+    description: '최대·평균 CPU 온도를 모니터링합니다.',
+    allowedWings: {SidebarWing.left},
+    widthUnits: 4,
+    heightUnits: 2,
+    builder: _buildGlobalTemperatureWidget,
   ),
   SidebarWidgetType.commandConsole: _WidgetBlueprint(
     type: SidebarWidgetType.commandConsole,
@@ -2752,18 +2538,38 @@ const Map<SidebarWidgetType, _WidgetBlueprint> _widgetBlueprints = {
     description: '명령 전송 · 최근 요청을 관리합니다.',
     allowedWings: {SidebarWing.left},
     widthUnits: 4,
-    heightUnits: 6,
+    heightUnits: 4,
     builder: _buildCommandConsoleWidget,
   ),
   SidebarWidgetType.telemetry: _WidgetBlueprint(
     type: SidebarWidgetType.telemetry,
     displayName: '실시간 텔레메트리',
-    description: '선택한 노드의 CPU/온도/링크 상태를 HUD 형태로 제공합니다.',
+    description: '선택한 노드의 CPU·메모리를 HUD 형태로 제공합니다.',
     allowedWings: {SidebarWing.right},
     widthUnits: 4,
     heightUnits: 4,
     requiresHost: true,
     builder: _buildTelemetryWidget,
+  ),
+  SidebarWidgetType.hostLink: _WidgetBlueprint(
+    type: SidebarWidgetType.hostLink,
+    displayName: '링크 상태',
+    description: '노드별 실시간 링크 속도를 표시합니다.',
+    allowedWings: {SidebarWing.right},
+    widthUnits: 4,
+    heightUnits: 2,
+    requiresHost: true,
+    builder: _buildHostLinkWidget,
+  ),
+  SidebarWidgetType.hostTemperature: _WidgetBlueprint(
+    type: SidebarWidgetType.hostTemperature,
+    displayName: '온도 현황',
+    description: '노드별 CPU/GPU 온도를 추적합니다.',
+    allowedWings: {SidebarWing.right},
+    widthUnits: 4,
+    heightUnits: 2,
+    requiresHost: true,
+    builder: _buildHostTemperatureWidget,
   ),
   SidebarWidgetType.processes: _WidgetBlueprint(
     type: SidebarWidgetType.processes,
@@ -2771,7 +2577,7 @@ const Map<SidebarWidgetType, _WidgetBlueprint> _widgetBlueprints = {
     description: 'CPU 사용량 기준 상위 프로세스를 보여줍니다.',
     allowedWings: {SidebarWing.right},
     widthUnits: 4,
-    heightUnits: 3,
+    heightUnits: 2,
     requiresHost: true,
     builder: _buildProcessWidget,
   ),
@@ -2791,7 +2597,7 @@ const Map<SidebarWidgetType, _WidgetBlueprint> _widgetBlueprints = {
     description: '스토리지 볼륨과 사용량을 표시합니다.',
     allowedWings: {SidebarWing.right},
     widthUnits: 4,
-    heightUnits: 1,
+    heightUnits: 2,
     requiresHost: true,
     builder: _buildStorageWidget,
   ),
@@ -2801,6 +2607,46 @@ Widget _buildGlobalMetricsWidget(
   BuildContext context,
   _WidgetBuildContext data,
 ) => _SidebarOverviewCard(frame: data.frame);
+
+Widget _buildGlobalLinkWidget(BuildContext context, _WidgetBuildContext data) {
+  final frame = data.frame;
+  final throughput = frame.estimatedThroughput;
+  final capacity = frame.totalLinkCapacity;
+  final utilization = capacity > 0
+      ? (throughput / capacity).clamp(0.0, 1.0)
+      : null;
+  return _GlassTile(
+    child: _LinkStatusPanel(
+      title: '클러스터 링크',
+      primaryValue: '${throughput.toStringAsFixed(2)} Gbps',
+      caption: capacity > 0
+          ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
+          : '용량 정보 없음',
+      utilization: utilization,
+    ),
+  );
+}
+
+Widget _buildGlobalTemperatureWidget(
+  BuildContext context,
+  _WidgetBuildContext data,
+) {
+  final frame = data.frame;
+  final maxTemp = frame.maxCpuTemperature > 0 ? frame.maxCpuTemperature : null;
+  final avgTemp = frame.averageCpuTemperature > 0
+      ? frame.averageCpuTemperature
+      : null;
+  return _GlassTile(
+    child: _TemperaturePanel(
+      title: '클러스터 온도',
+      primaryLabel: maxTemp != null ? '${maxTemp.toStringAsFixed(1)}℃' : 'N/A',
+      secondaryLabel: avgTemp != null
+          ? '평균 ${avgTemp.toStringAsFixed(1)}℃'
+          : '센서 없음',
+      progress: maxTemp != null ? (maxTemp / 110).clamp(0.0, 1.0) : null,
+    ),
+  );
+}
 
 Widget _buildCommandConsoleWidget(
   BuildContext context,
@@ -2824,6 +2670,66 @@ Widget _buildTelemetryWidget(BuildContext context, _WidgetBuildContext data) {
   );
 }
 
+Widget _buildHostLinkWidget(BuildContext context, _WidgetBuildContext data) {
+  final host = data.selectedHost;
+  if (host == null) {
+    return const _DockHostGuard(message: '노드를 선택하여 링크를 확인하세요.');
+  }
+  final latest = data.samples.isNotEmpty ? data.samples.last : null;
+  final throughput = host.metrics.netThroughputGbps ?? latest?.throughput ?? 0;
+  final capacity = host.metrics.netCapacityGbps;
+  final utilization = capacity != null && capacity > 0
+      ? (throughput / capacity).clamp(0.0, 1.0)
+      : null;
+  return _GlassTile(
+    child: _LinkStatusPanel(
+      title: host.displayName,
+      primaryValue: throughput > 0
+          ? '${throughput.toStringAsFixed(2)} Gbps'
+          : '데이터 없음',
+      caption: capacity != null
+          ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
+          : '용량 정보 없음',
+      utilization: utilization,
+    ),
+  );
+}
+
+Widget _buildHostTemperatureWidget(
+  BuildContext context,
+  _WidgetBuildContext data,
+) {
+  final host = data.selectedHost;
+  if (host == null) {
+    return const _DockHostGuard(message: '노드를 선택하여 온도를 확인하세요.');
+  }
+  final cpuTemp = host.cpuTemperature;
+  final gpuTemp = host.gpuTemperature;
+  final primary = cpuTemp ?? gpuTemp;
+  final secondary = () {
+    if (cpuTemp != null && gpuTemp != null) {
+      return 'GPU ${gpuTemp.toStringAsFixed(1)}℃';
+    }
+    if (cpuTemp != null) {
+      return 'GPU 센서 없음';
+    }
+    if (gpuTemp != null) {
+      return 'GPU ${gpuTemp.toStringAsFixed(1)}℃';
+    }
+    return '센서 없음';
+  }();
+  return _GlassTile(
+    child: _TemperaturePanel(
+      title: host.displayName,
+      primaryLabel: primary != null
+          ? '${primary.toStringAsFixed(1)}℃'
+          : '데이터 없음',
+      secondaryLabel: secondary,
+      progress: primary != null ? (primary / 110).clamp(0.0, 1.0) : null,
+    ),
+  );
+}
+
 Widget _buildProcessWidget(BuildContext context, _WidgetBuildContext data) {
   final host = data.selectedHost;
   if (host == null) {
@@ -2835,7 +2741,7 @@ Widget _buildProcessWidget(BuildContext context, _WidgetBuildContext data) {
 Widget _buildNetworkWidget(BuildContext context, _WidgetBuildContext data) {
   final host = data.selectedHost;
   if (host == null) {
-    return const _DockHostGuard(message: '네트워크 링크는 선택된 노드 기준으로 표시됩니다.');
+    return const _DockHostGuard(message: '네트워크 인터페이스는 선택된 노드 기준으로 표시됩니다.');
   }
   return _InterfacePanel(host: host);
 }
@@ -3295,6 +3201,7 @@ class _DockedWidgetTile extends StatelessWidget {
       heightUnits: placement.heightUnits,
       allowedWings: blueprint.allowedWings,
     );
+    final sizeLabel = '${blueprint.widthUnits}×${blueprint.heightUnits}';
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 240),
@@ -3326,6 +3233,12 @@ class _DockedWidgetTile extends StatelessWidget {
                   },
                 ),
               ),
+            ),
+            Positioned(
+              top: 6,
+              left: 0,
+              right: 0,
+              child: Center(child: _SizeBadge(label: sizeLabel)),
             ),
             Positioned(
               right: 6,
@@ -3384,6 +3297,28 @@ class _DockGripIcon extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: const Icon(Icons.drag_indicator, size: 16, color: Colors.white54),
+    );
+  }
+}
+
+class _SizeBadge extends StatelessWidget {
+  const _SizeBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0x330C1A2A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x221B2333)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(color: Colors.white54, fontSize: 11),
+      ),
     );
   }
 }
