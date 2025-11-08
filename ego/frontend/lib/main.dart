@@ -1004,86 +1004,92 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
       border: OutlineInputBorder(),
     );
 
-    return _GlassTile(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '원격 자동화',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '원격 자동화',
+          style: TextStyle(
+            color: Colors.white70,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 6),
+        InputDecorator(
+          decoration: inputDecoration.copyWith(labelText: '대상 노드'),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedHostname ?? hostItems.first.value,
+              items: hostItems,
+              onChanged: (value) => setState(() => _selectedHostname = value),
             ),
           ),
-          const SizedBox(height: 10),
-          InputDecorator(
-            decoration: inputDecoration.copyWith(labelText: '대상 노드'),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedHostname ?? hostItems.first.value,
-                items: hostItems,
-                onChanged: (value) => setState(() => _selectedHostname = value),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _commandController,
+          decoration: inputDecoration.copyWith(
+            labelText: '명령어',
+            hintText: '예) ipconfig /all',
+          ),
+          minLines: 1,
+          maxLines: 2,
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _timeoutController,
+          decoration: inputDecoration.copyWith(labelText: '타임아웃(초, 선택)'),
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            ElevatedButton.icon(
+              onPressed: _sending ? null : _submitCommand,
+              icon: _sending
+                  ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send, size: 14),
+              label: const Text('실행'),
+            ),
+            const SizedBox(width: 10),
+            if (_formError != null)
+              Expanded(
+                child: Text(
+                  _formError!,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _commandController,
-            decoration: inputDecoration.copyWith(
-              labelText: '명령어',
-              hintText: '예) ipconfig /all',
-            ),
-            minLines: 1,
-            maxLines: 2,
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _timeoutController,
-            decoration: inputDecoration.copyWith(labelText: '타임아웃(초, 선택)'),
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              ElevatedButton.icon(
-                onPressed: _sending ? null : _submitCommand,
-                icon: _sending
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send, size: 16),
-                label: const Text('실행'),
-              ),
-              const SizedBox(width: 12),
-              if (_formError != null)
-                Expanded(
+          ],
+        ),
+        const SizedBox(height: 4),
+        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        const SizedBox(height: 4),
+        Expanded(
+          child: visibleJobs.isEmpty
+              ? const Align(
+                  alignment: Alignment.topLeft,
                   child: Text(
-                    _formError!,
-                    style: const TextStyle(
-                      color: Colors.redAccent,
-                      fontSize: 12,
-                    ),
+                    '명령 기록이 없습니다.',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                )
+              : ListView.separated(
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  itemCount: visibleJobs.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 6),
+                  itemBuilder: (context, index) => _CommandJobTile(
+                    color: _statusColor(visibleJobs[index].status),
+                    job: visibleJobs[index],
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          if (_loading) const LinearProgressIndicator(minHeight: 2),
-          const SizedBox(height: 6),
-          if (visibleJobs.isEmpty)
-            const Text(
-              '명령 기록이 없습니다.',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-            )
-          else
-            ...visibleJobs.map(
-              (job) =>
-                  _CommandJobTile(color: _statusColor(job.status), job: job),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1115,6 +1121,7 @@ class _CommandJobTile extends StatelessWidget {
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
+                    fontSize: 12,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1126,7 +1133,7 @@ class _CommandJobTile extends StatelessWidget {
                 side: BorderSide.none,
                 label: Text(
                   job.statusLabel,
-                  style: TextStyle(color: color, fontSize: 11),
+                  style: TextStyle(color: color, fontSize: 10),
                 ),
               ),
             ],
@@ -1134,7 +1141,7 @@ class _CommandJobTile extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             '${job.hostname} · ${job.requestedLabel}',
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
+            style: const TextStyle(color: Colors.white54, fontSize: 10),
           ),
         ],
       ),
@@ -1166,7 +1173,7 @@ class _InfoPill extends StatelessWidget {
             label,
             style: const TextStyle(
               color: Colors.white70,
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w500,
             ),
             maxLines: 1,
@@ -1392,8 +1399,8 @@ class _RealtimeTelemetryCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final gaugeSize = math.max(
-          70.0,
-          math.min(120.0, (constraints.maxHeight - 36) / 2),
+          60.0,
+          math.min(90.0, (constraints.maxHeight - 28) / 2),
         );
         return Container(
           padding: const EdgeInsets.all(16),
@@ -2048,27 +2055,6 @@ class _GlassTile extends StatelessWidget {
   }
 }
 
-class _DockPanel extends StatelessWidget {
-  const _DockPanel({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0x110C1A2A),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0x221B2333)),
-        ),
-        child: child,
-      ),
-    );
-  }
-}
-
 class _LinkStatusPanel extends StatelessWidget {
   const _LinkStatusPanel({
     required this.title,
@@ -2097,6 +2083,7 @@ class _LinkStatusPanel extends StatelessWidget {
               style: const TextStyle(
                 color: Colors.white70,
                 fontWeight: FontWeight.w600,
+                fontSize: 13,
               ),
             ),
           ),
@@ -2111,7 +2098,7 @@ class _LinkStatusPanel extends StatelessWidget {
               primaryValue,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 20,
+                fontSize: 16,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -2180,6 +2167,7 @@ class _TemperaturePanel extends StatelessWidget {
               style: const TextStyle(
                 color: Colors.white70,
                 fontWeight: FontWeight.w600,
+                fontSize: 13,
               ),
             ),
           ),
@@ -2194,7 +2182,7 @@ class _TemperaturePanel extends StatelessWidget {
               primaryLabel,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 20,
+                fontSize: 16,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -2696,10 +2684,8 @@ Widget _buildGlobalMetricsWidget(
 ) {
   final frame = data.frame;
   final available = data.constraints.maxHeight;
-  final gaugeSize = math.max(70.0, math.min(110.0, (available - 32) / 2));
-  return _DockPanel(
-    child: _SidebarOverviewCard(frame: frame, gaugeSize: gaugeSize),
-  );
+  final gaugeSize = math.max(60.0, math.min(90.0, (available - 28) / 2));
+  return _SidebarOverviewCard(frame: frame, gaugeSize: gaugeSize);
 }
 
 Widget _buildGlobalLinkWidget(BuildContext context, _WidgetBuildContext data) {
@@ -2709,15 +2695,13 @@ Widget _buildGlobalLinkWidget(BuildContext context, _WidgetBuildContext data) {
   final utilization = capacity > 0
       ? (throughput / capacity).clamp(0.0, 1.0)
       : null;
-  return _DockPanel(
-    child: _LinkStatusPanel(
-      title: '클러스터 링크',
-      primaryValue: '${throughput.toStringAsFixed(2)} Gbps',
-      caption: capacity > 0
-          ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
-          : '용량 정보 없음',
-      utilization: utilization,
-    ),
+  return _LinkStatusPanel(
+    title: '클러스터 링크',
+    primaryValue: '${throughput.toStringAsFixed(2)} Gbps',
+    caption: capacity > 0
+        ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
+        : '용량 정보 없음',
+    utilization: utilization,
   );
 }
 
@@ -2730,44 +2714,35 @@ Widget _buildGlobalTemperatureWidget(
   final avgTemp = frame.averageCpuTemperature > 0
       ? frame.averageCpuTemperature
       : null;
-  return _DockPanel(
-    child: _TemperaturePanel(
-      title: '클러스터 온도',
-      primaryLabel: maxTemp != null ? '${maxTemp.toStringAsFixed(1)}℃' : 'N/A',
-      secondaryLabel: avgTemp != null
-          ? '평균 ${avgTemp.toStringAsFixed(1)}℃'
-          : '센서 없음',
-      progress: maxTemp != null ? (maxTemp / 110).clamp(0.0, 1.0) : null,
-    ),
+  return _TemperaturePanel(
+    title: '클러스터 온도',
+    primaryLabel: maxTemp != null ? '${maxTemp.toStringAsFixed(1)}℃' : 'N/A',
+    secondaryLabel: avgTemp != null
+        ? '평균 ${avgTemp.toStringAsFixed(1)}℃'
+        : '센서 없음',
+    progress: maxTemp != null ? (maxTemp / 110).clamp(0.0, 1.0) : null,
   );
 }
 
 Widget _buildCommandConsoleWidget(
   BuildContext context,
   _WidgetBuildContext data,
-) => _DockPanel(
-  child: _CommandConsoleCard(
-    frame: data.frame,
-    selectedHost: data.selectedHost,
-  ),
-);
+) => _CommandConsoleCard(frame: data.frame, selectedHost: data.selectedHost);
 
 Widget _buildTelemetryWidget(BuildContext context, _WidgetBuildContext data) {
   final host = data.selectedHost;
   if (host == null) {
     return const _DockHostGuard(message: '노드를 선택하여 연결 상태를 확인하세요.');
   }
-  return _DockPanel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _OverlayHeader(host: host, theme: Theme.of(context).textTheme),
-        const SizedBox(height: 8),
-        Expanded(
-          child: _RealtimeTelemetryCard(host: host, samples: data.samples),
-        ),
-      ],
-    ),
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _OverlayHeader(host: host, theme: Theme.of(context).textTheme),
+      const SizedBox(height: 6),
+      Expanded(
+        child: _RealtimeTelemetryCard(host: host, samples: data.samples),
+      ),
+    ],
   );
 }
 
@@ -2782,17 +2757,15 @@ Widget _buildHostLinkWidget(BuildContext context, _WidgetBuildContext data) {
   final utilization = capacity != null && capacity > 0
       ? (throughput / capacity).clamp(0.0, 1.0)
       : null;
-  return _DockPanel(
-    child: _LinkStatusPanel(
-      title: host.displayName,
-      primaryValue: throughput > 0
-          ? '${throughput.toStringAsFixed(2)} Gbps'
-          : '데이터 없음',
-      caption: capacity != null
-          ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
-          : '용량 정보 없음',
-      utilization: utilization,
-    ),
+  return _LinkStatusPanel(
+    title: host.displayName,
+    primaryValue: throughput > 0
+        ? '${throughput.toStringAsFixed(2)} Gbps'
+        : '데이터 없음',
+    caption: capacity != null
+        ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
+        : '용량 정보 없음',
+    utilization: utilization,
   );
 }
 
@@ -2819,15 +2792,11 @@ Widget _buildHostTemperatureWidget(
     }
     return '센서 없음';
   }();
-  return _DockPanel(
-    child: _TemperaturePanel(
-      title: host.displayName,
-      primaryLabel: primary != null
-          ? '${primary.toStringAsFixed(1)}℃'
-          : '데이터 없음',
-      secondaryLabel: secondary,
-      progress: primary != null ? (primary / 110).clamp(0.0, 1.0) : null,
-    ),
+  return _TemperaturePanel(
+    title: host.displayName,
+    primaryLabel: primary != null ? '${primary.toStringAsFixed(1)}℃' : '데이터 없음',
+    secondaryLabel: secondary,
+    progress: primary != null ? (primary / 110).clamp(0.0, 1.0) : null,
   );
 }
 
@@ -2836,7 +2805,7 @@ Widget _buildProcessWidget(BuildContext context, _WidgetBuildContext data) {
   if (host == null) {
     return const _DockHostGuard(message: '대상을 선택하면 프로세스를 보여줍니다.');
   }
-  return _DockPanel(child: _ProcessPanel(host: host));
+  return _ProcessPanel(host: host);
 }
 
 Widget _buildNetworkWidget(BuildContext context, _WidgetBuildContext data) {
@@ -2844,7 +2813,7 @@ Widget _buildNetworkWidget(BuildContext context, _WidgetBuildContext data) {
   if (host == null) {
     return const _DockHostGuard(message: '네트워크 인터페이스는 선택된 노드 기준으로 표시됩니다.');
   }
-  return _DockPanel(child: _InterfacePanel(host: host));
+  return _InterfacePanel(host: host);
 }
 
 Widget _buildStorageWidget(BuildContext context, _WidgetBuildContext data) {
@@ -2852,7 +2821,7 @@ Widget _buildStorageWidget(BuildContext context, _WidgetBuildContext data) {
   if (host == null) {
     return const _DockHostGuard(message: '스토리지 사용량을 보려면 노드를 선택하세요.');
   }
-  return _DockPanel(child: _StoragePanel(host: host));
+  return _StoragePanel(host: host);
 }
 
 class _WidgetPlacementSeed {
@@ -3320,7 +3289,7 @@ class _DockedWidgetTile extends StatelessWidget {
           children: [
             Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 32, 14, 14),
+                padding: const EdgeInsets.fromLTRB(12, 30, 12, 12),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final data = _WidgetBuildContext(
