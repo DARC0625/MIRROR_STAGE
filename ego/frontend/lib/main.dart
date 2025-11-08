@@ -47,46 +47,6 @@ class MirrorStageApp extends StatelessWidget {
   }
 }
 
-void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
-  const dash = 10.0;
-  const gap = 6.0;
-  for (final metric in path.computeMetrics()) {
-    double distance = 0;
-    while (distance < metric.length) {
-      final next = math.min(metric.length, distance + dash);
-      final segment = metric.extractPath(distance, next);
-      canvas.drawPath(segment, paint);
-      distance = next + gap;
-    }
-  }
-}
-
-void _drawArrowHead(
-  Canvas canvas,
-  Offset position,
-  double direction,
-  Color color,
-) {
-  const size = 8.0;
-  final path = Path()
-    ..moveTo(position.dx, position.dy)
-    ..lineTo(
-      position.dx - size * math.cos(direction - 0.4),
-      position.dy - size * math.sin(direction - 0.4),
-    )
-    ..lineTo(
-      position.dx - size * math.cos(direction + 0.4),
-      position.dy - size * math.sin(direction + 0.4),
-    )
-    ..close();
-  canvas.drawPath(
-    path,
-    Paint()
-      ..color = color.withValues(alpha: 0.9)
-      ..style = PaintingStyle.fill,
-  );
-}
-
 class DigitalTwinShell extends StatefulWidget {
   const DigitalTwinShell({super.key, this.channel});
 
@@ -2495,17 +2455,8 @@ class _TwinScenePainter extends CustomPainter {
   }
 
   void _paintGrid(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF0E2032)
-      ..strokeWidth = 0.6;
-
-    const spacing = 36.0;
-    for (double x = 0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
+    final picture = _GridPictureCache.instance.pictureFor(size);
+    canvas.drawPicture(picture);
 
     final haloPaint = Paint()
       ..shader =
@@ -2883,6 +2834,95 @@ double hostBubbleRadius(TwinHost host) {
   }
   final cpuLoad = host.metrics.cpuLoad.clamp(0.0, 100.0);
   return 10.0 + cpuLoad * 0.06;
+}
+
+void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
+  const dash = 10.0;
+  const gap = 6.0;
+  for (final metric in path.computeMetrics()) {
+    double distance = 0;
+    while (distance < metric.length) {
+      final next = math.min(metric.length, distance + dash);
+      final segment = metric.extractPath(distance, next);
+      canvas.drawPath(segment, paint);
+      distance = next + gap;
+    }
+  }
+}
+
+void _drawArrowHead(
+  Canvas canvas,
+  Offset position,
+  double direction,
+  Color color,
+) {
+  const size = 8.0;
+  final path = Path()
+    ..moveTo(position.dx, position.dy)
+    ..lineTo(
+      position.dx - size * math.cos(direction - 0.4),
+      position.dy - size * math.sin(direction - 0.4),
+    )
+    ..lineTo(
+      position.dx - size * math.cos(direction + 0.4),
+      position.dy - size * math.sin(direction + 0.4),
+    )
+    ..close();
+  canvas.drawPath(
+    path,
+    Paint()
+      ..color = color.withValues(alpha: 0.9)
+      ..style = PaintingStyle.fill,
+  );
+}
+
+class _GridPictureCache {
+  _GridPictureCache._();
+  static final _GridPictureCache instance = _GridPictureCache._();
+
+  final Map<_GridCacheKey, ui.Picture> _cache = {};
+
+  ui.Picture pictureFor(Size size) {
+    final key = _GridCacheKey(size);
+    final cached = _cache[key];
+    if (cached != null) {
+      return cached;
+    }
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()
+      ..color = const Color(0xFF0E2032)
+      ..strokeWidth = 0.6;
+    const spacing = 36.0;
+    for (double x = 0; x < size.width; x += spacing) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += spacing) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+    final picture = recorder.endRecording();
+    if (_cache.length > 6) {
+      _cache.remove(_cache.keys.first);
+    }
+    _cache[key] = picture;
+    return picture;
+  }
+}
+
+class _GridCacheKey {
+  _GridCacheKey(Size size)
+    : width = size.width.round(),
+      height = size.height.round();
+
+  final int width;
+  final int height;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _GridCacheKey && width == other.width && height == other.height;
+
+  @override
+  int get hashCode => Object.hash(width, height);
 }
 
 String _formatBytes(double? bytes) {
