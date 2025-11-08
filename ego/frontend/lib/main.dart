@@ -187,7 +187,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
   }
 }
 
-class _Sidebar extends StatelessWidget {
+class _Sidebar extends StatefulWidget {
   const _Sidebar({
     required this.frame,
     required this.mode,
@@ -201,86 +201,59 @@ class _Sidebar extends StatelessWidget {
   final TwinHost? selectedHost;
 
   @override
+  State<_Sidebar> createState() => _SidebarState();
+}
+
+class _SidebarState extends State<_Sidebar> {
+  late final PageController _controller;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController(viewportFraction: 0.9);
+  }
+
+  @override
+  void didUpdateWidget(covariant _Sidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedHost?.hostname != oldWidget.selectedHost?.hostname) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _controller.jumpToPage(0);
+        setState(() => _currentPage = 0);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
-
-    List<_InfoWidgetConfig> buildWidgets() {
-      return [
-        _InfoWidgetConfig(
-          title: '평균 CPU',
-          child: _AnalogGauge(
-            label: '평균 CPU',
-            value: frame.averageCpuLoad.clamp(0, 100).toDouble(),
-            maxValue: 100,
-            units: '%',
-            decimals: 1,
-            startColor: Colors.lightBlueAccent,
-            endColor: Colors.deepOrangeAccent,
-            subtitle: frame.averageCpuTemperature > 0
-                ? '온도 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃'
-                : null,
-            size: 140,
-          ),
-        ),
-        _InfoWidgetConfig(
-          title: '메모리 사용률',
-          child: _AnalogGauge(
-            label: '메모리',
-            value: frame.memoryUtilizationPercent.clamp(0, 100).toDouble(),
-            maxValue: 100,
-            units: '%',
-            decimals: 1,
-            startColor: const Color(0xFF38BDF8),
-            endColor: Colors.deepOrangeAccent,
-            subtitle: frame.totalMemoryCapacityGb > 0
-                ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
-                : null,
-            size: 140,
-          ),
-        ),
-        _InfoWidgetConfig(
-          title: '링크 상태',
-          child: _TrendTile(
-            value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
-            caption: frame.totalLinkCapacity > 0
-                ? '용량 ${frame.totalLinkCapacity.toStringAsFixed(2)} Gbps'
-                : '용량 정보 없음',
-            trend: (frame.linkUtilization * 100).clamp(0.0, 100.0),
-          ),
-        ),
-        _InfoWidgetConfig(
-          title: '온도',
-          child: _TrendTile(
-            value: frame.maxCpuTemperature > 0
-                ? '${frame.maxCpuTemperature.toStringAsFixed(1)}℃'
-                : 'N/A',
-            caption: '평균 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃',
-            trend: (frame.averageCpuTemperature / 110).clamp(0.0, 1.0) * 100,
-          ),
-        ),
-      ];
-    }
-
-    final widgets = buildWidgets();
     final statusChips = [
       _StatusChip(label: '내부망', value: '10.0.0.0/24'),
       _StatusChip(
         label: '온라인',
-        value: '${frame.onlineHosts}/${frame.totalHosts}',
+        value: '${widget.frame.onlineHosts}/${widget.frame.totalHosts}',
       ),
       _StatusChip(
         label: 'CPU',
-        value: '${frame.averageCpuLoad.toStringAsFixed(1)}%',
+        value: '${widget.frame.averageCpuLoad.toStringAsFixed(1)}%',
       ),
       _StatusChip(
         label: '메모리',
-        value: frame.totalMemoryCapacityGb > 0
-            ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
-            : '${frame.averageMemoryLoad.toStringAsFixed(1)}%',
+        value: widget.frame.totalMemoryCapacityGb > 0
+            ? '${widget.frame.totalMemoryUsedGb.toStringAsFixed(1)}/${widget.frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
+            : '${widget.frame.averageMemoryLoad.toStringAsFixed(1)}%',
       ),
     ];
 
-    final hasSelection = selectedHost != null;
+    final pages = _buildPages();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
@@ -291,74 +264,56 @@ class _Sidebar extends StatelessWidget {
           end: Alignment.bottomCenter,
         ),
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  '작전 콘솔',
-                  style: theme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Spacer(),
-                _ViewModeToggle(mode: mode, onModeChange: onModeChange),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Wrap(spacing: 8, runSpacing: 8, children: statusChips),
-            const SizedBox(height: 20),
-            if (!hasSelection) ...[
-              _GlassTile(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      '노드를 선택하면 실시간 텔레메트리를 확인할 수 있습니다.',
-                      style: TextStyle(color: Colors.white60, fontSize: 13),
-                    ),
-                  ],
-                ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '작전 콘솔',
+                style: theme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: widgets
-                    .map(
-                      (config) => SizedBox(
-                        width: 260,
-                        child: _GlassTile(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                config.title,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              config.child,
-                            ],
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
+              const Spacer(),
+              _ViewModeToggle(
+                mode: widget.mode,
+                onModeChange: widget.onModeChange,
               ),
-            ] else ...[
-              _GlassTile(child: _HostVitalsBar(host: selectedHost!)),
-              const SizedBox(height: 16),
-              _GlassTile(child: _SelectedTelemetryPanel(host: selectedHost!)),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(spacing: 8, runSpacing: 8, children: statusChips),
+          const SizedBox(height: 20),
+          Expanded(
+            child: PageView.builder(
+              controller: _controller,
+              itemCount: pages.length,
+              onPageChanged: (value) => setState(() => _currentPage = value),
+              itemBuilder: (context, index) => Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: pages[index],
+              ),
+            ),
+          ),
+          if (pages.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: _DotsIndicator(count: pages.length, index: _currentPage),
+            ),
+        ],
       ),
     );
+  }
+
+  List<Widget> _buildPages() {
+    final cards = <Widget>[_SidebarOverviewCard(frame: widget.frame)];
+    final host = widget.selectedHost;
+    if (host != null) {
+      cards.add(_GlassTile(child: _HostVitalsBar(host: host)));
+      cards.add(_GlassTile(child: _SelectedTelemetryPanel(host: host)));
+    } else {
+      cards.add(const _GlassTile(child: _SidebarPlaceholder()));
+    }
+    return cards;
   }
 }
 
@@ -866,6 +821,160 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
+class _SidebarOverviewCard extends StatelessWidget {
+  const _SidebarOverviewCard({required this.frame});
+
+  final TwinStateFrame frame;
+
+  @override
+  Widget build(BuildContext context) {
+    final widgets = [
+      _InfoWidgetConfig(
+        title: '평균 CPU',
+        child: _AnalogGauge(
+          label: '평균 CPU',
+          value: frame.averageCpuLoad.clamp(0, 100).toDouble(),
+          maxValue: 100,
+          units: '%',
+          decimals: 1,
+          startColor: Colors.lightBlueAccent,
+          endColor: Colors.deepOrangeAccent,
+          subtitle: frame.averageCpuTemperature > 0
+              ? '온도 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃'
+              : null,
+          size: 120,
+        ),
+      ),
+      _InfoWidgetConfig(
+        title: '메모리 사용률',
+        child: _AnalogGauge(
+          label: '메모리',
+          value: frame.memoryUtilizationPercent.clamp(0, 100).toDouble(),
+          maxValue: 100,
+          units: '%',
+          decimals: 1,
+          startColor: const Color(0xFF38BDF8),
+          endColor: Colors.deepOrangeAccent,
+          subtitle: frame.totalMemoryCapacityGb > 0
+              ? '${frame.totalMemoryUsedGb.toStringAsFixed(1)}/${frame.totalMemoryCapacityGb.toStringAsFixed(1)} GB'
+              : null,
+          size: 120,
+        ),
+      ),
+      _InfoWidgetConfig(
+        title: '링크 상태',
+        child: _TrendTile(
+          value: '${frame.estimatedThroughput.toStringAsFixed(2)} Gbps',
+          caption: frame.totalLinkCapacity > 0
+              ? '용량 ${frame.totalLinkCapacity.toStringAsFixed(2)} Gbps'
+              : '용량 정보 없음',
+          trend: (frame.linkUtilization * 100).clamp(0.0, 100.0),
+        ),
+      ),
+      _InfoWidgetConfig(
+        title: '온도',
+        child: _TrendTile(
+          value: frame.maxCpuTemperature > 0
+              ? '${frame.maxCpuTemperature.toStringAsFixed(1)}℃'
+              : 'N/A',
+          caption: '평균 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃',
+          trend: (frame.averageCpuTemperature / 110).clamp(0.0, 1.0) * 100,
+        ),
+      ),
+    ];
+
+    return SingleChildScrollView(
+      child: _GlassTile(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '전역 메트릭',
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: widgets
+                  .map(
+                    (config) => SizedBox(
+                      width: 200,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            config.title,
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          config.child,
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarPlaceholder extends StatelessWidget {
+  const _SidebarPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 220,
+      child: Center(
+        child: Text(
+          '노드를 선택하면 실시간 텔레메트리를 확인할 수 있습니다.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+}
+
+class _DotsIndicator extends StatelessWidget {
+  const _DotsIndicator({required this.count, required this.index});
+
+  final int count;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        count,
+        (i) => AnimatedContainer(
+          duration: const Duration(milliseconds: 240),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          width: i == index ? 18 : 8,
+          height: 8,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            color: i == index
+                ? Colors.tealAccent
+                : Colors.white.withValues(alpha: 0.25),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _InfoPill extends StatelessWidget {
   const _InfoPill({required this.icon, required this.label});
 
@@ -981,7 +1090,7 @@ class _HostOverlayState extends State<_HostOverlay> {
   }
 }
 
-class _HostOverlayCard extends StatelessWidget {
+class _HostOverlayCard extends StatefulWidget {
   const _HostOverlayCard({
     super.key,
     required this.host,
@@ -992,8 +1101,29 @@ class _HostOverlayCard extends StatelessWidget {
   final List<_MetricSample> samples;
 
   @override
+  State<_HostOverlayCard> createState() => _HostOverlayCardState();
+}
+
+class _HostOverlayCardState extends State<_HostOverlayCard> {
+  late final PageController _controller;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
+    final sections = _buildSections();
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
@@ -1012,40 +1142,44 @@ class _HostOverlayCard extends StatelessWidget {
             ],
           ),
           padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                _OverlayHeader(host: host, theme: theme),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(child: _SystemSummaryPanel(host: host)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _RealtimeTelemetryCard(
-                        host: host,
-                        samples: samples,
-                        dense: true,
-                      ),
-                    ),
-                  ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _OverlayHeader(host: widget.host, theme: theme),
+              const SizedBox(height: 16),
+              Expanded(
+                child: PageView.builder(
+                  controller: _controller,
+                  itemCount: sections.length,
+                  onPageChanged: (value) => setState(() => _page = value),
+                  itemBuilder: (context, index) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: sections[index],
+                  ),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(child: _ProcessPanel(host: host)),
-                    const SizedBox(width: 12),
-                    Expanded(child: _InterfacePanel(host: host)),
-                  ],
+              ),
+              if (sections.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: _DotsIndicator(count: sections.length, index: _page),
                 ),
-                const SizedBox(height: 12),
-                _StoragePanel(host: host),
-              ],
-            ),
+            ],
           ),
         ),
       ),
     );
+  }
+
+  List<Widget> _buildSections() {
+    final host = widget.host;
+    final samples = widget.samples;
+    return [
+      _RealtimeTelemetryCard(host: host, samples: samples),
+      _SystemSummaryPanel(host: host),
+      _ProcessPanel(host: host),
+      _InterfacePanel(host: host),
+      _StoragePanel(host: host),
+    ];
   }
 }
 
@@ -1987,15 +2121,10 @@ class _HostChip extends StatelessWidget {
 }
 
 class _RealtimeTelemetryCard extends StatelessWidget {
-  const _RealtimeTelemetryCard({
-    required this.host,
-    required this.samples,
-    this.dense = false,
-  });
+  const _RealtimeTelemetryCard({required this.host, required this.samples});
 
   final TwinHost host;
   final List<_MetricSample> samples;
-  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -2012,13 +2141,13 @@ class _RealtimeTelemetryCard extends StatelessWidget {
         ? '${_formatBytes(host.memoryUsedBytes)} / ${_formatBytes(host.memoryTotalBytes)}'
         : '${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%';
 
-    final gaugeSize = dense ? 120.0 : 140.0;
-    final padding = dense ? const EdgeInsets.all(16) : const EdgeInsets.all(18);
+    const gaugeSize = 130.0;
+    const padding = EdgeInsets.all(18);
 
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: dense ? const Color(0x19050B15) : const Color(0xFF050B15),
+        color: const Color(0xFF050B15),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFF1B2333)),
       ),
@@ -2041,7 +2170,7 @@ class _RealtimeTelemetryCard extends StatelessWidget {
                   maxValue: 100,
                   units: '%',
                   decimals: 1,
-                  subtitle: dense ? null : '업타임 $uptimeText',
+                  subtitle: '업타임 $uptimeText',
                   startColor: Colors.lightBlueAccent,
                   endColor: Colors.deepOrangeAccent,
                   size: gaugeSize,
@@ -2065,7 +2194,7 @@ class _RealtimeTelemetryCard extends StatelessWidget {
               ),
             ],
           ),
-          SizedBox(height: dense ? 12 : 16),
+          const SizedBox(height: 16),
           _MetricProgressRow(
             icon: Icons.device_thermostat,
             label: '온도',
@@ -2077,7 +2206,7 @@ class _RealtimeTelemetryCard extends StatelessWidget {
                 : null,
             caption: temperature != null ? '센서 실측' : '센서 데이터 없음',
           ),
-          SizedBox(height: dense ? 10 : 12),
+          const SizedBox(height: 12),
           _MetricProgressRow(
             icon: Icons.network_check,
             label: '네트워크',
@@ -2091,7 +2220,7 @@ class _RealtimeTelemetryCard extends StatelessWidget {
                 ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
                 : '용량 정보 없음',
           ),
-          SizedBox(height: dense ? 12 : 16),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
