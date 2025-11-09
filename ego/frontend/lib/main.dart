@@ -386,8 +386,11 @@ class _TwinViewport extends StatelessWidget {
     required this.heatMax,
     required this.onSelectHost,
     required this.onClearSelection,
-    required this.cameraFocus,
+    required this.cameraFrom,
+    required this.cameraTo,
+    required this.cameraAnimation,
     required this.linkPulse,
+    required this.repaint,
   });
 
   final TwinStateFrame frame;
@@ -397,8 +400,17 @@ class _TwinViewport extends StatelessWidget {
   final double heatMax;
   final ValueChanged<String> onSelectHost;
   final VoidCallback onClearSelection;
-  final TwinPosition cameraFocus;
-  final double linkPulse;
+  final TwinPosition cameraFrom;
+  final TwinPosition cameraTo;
+  final Animation<double> cameraAnimation;
+  final Animation<double> linkPulse;
+  final Listenable repaint;
+
+  TwinPosition get _cameraFocus => TwinPosition.lerp(
+    cameraFrom,
+    cameraTo,
+    Curves.easeOutCubic.transform(cameraAnimation.value),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -427,15 +439,17 @@ class _TwinViewport extends StatelessWidget {
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapDown: (details) {
-                  final tap = details.localPosition;
-                  TwinHost? nearest;
-                  double minDistance = double.infinity;
-                  for (final host in frame.hosts) {
-                    final point = twinProjectPoint(
-                      host.position,
-                      center,
-                      scale,
-                    );
+              final tap = details.localPosition;
+              TwinHost? nearest;
+              double minDistance = double.infinity;
+              final focus = _cameraFocus;
+              for (final host in frame.hosts) {
+                final point = twinProjectPoint(
+                  host.position,
+                  center,
+                  scale,
+                  focus,
+                );
                     final radius = hostBubbleRadius(host);
                     final distance = (tap - point).distance;
                     if (distance <= radius + 14 && distance < minDistance) {
@@ -446,22 +460,29 @@ class _TwinViewport extends StatelessWidget {
                   if (nearest != null) {
                     onSelectHost(nearest.hostname);
                   } else {
-                    onClearSelection();
-                  }
-                },
-                child: CustomPaint(
-                  painter: _TwinScenePainter(
-                    frame,
-                    mode: mode,
-                    selectedHost: selectedHost,
-                    heatMax: heatMax,
-                    cameraFocus: cameraFocus,
-                    linkPulse: linkPulse,
-                  ),
-                  child: const SizedBox.expand(),
-                ),
-              );
+                onClearSelection();
+              }
             },
+            child: RepaintBoundary(
+              child: CustomPaint(
+                isComplex: true,
+                willChange: true,
+                painter: _TwinScenePainter(
+                  frame,
+                  mode: mode,
+                  selectedHost: selectedHost,
+                  heatMax: heatMax,
+                  cameraFrom: cameraFrom,
+                  cameraTo: cameraTo,
+                  cameraAnimation: cameraAnimation,
+                  linkPulseAnimation: linkPulse,
+                  repaint: repaint,
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          );
+        },
           ),
         ),
       ),
@@ -571,32 +592,26 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
           ),
         );
 
-        return AnimatedBuilder(
-          animation: _stageTicker,
-          child: hostRail,
-          builder: (context, child) {
-            final focus = _currentCameraFocus;
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: RepaintBoundary(
-                    child: _TwinViewport(
-                      frame: widget.frame,
-                      height: constraints.maxHeight,
-                      mode: widget.mode,
-                      selectedHost: widget.selectedHost?.hostname,
-                      heatMax: widget.heatMax,
-                      onSelectHost: widget.onSelectHost,
-                      onClearSelection: widget.onClearSelection,
-                      cameraFocus: focus,
-                      linkPulse: _linkPulseAnimation.value,
-                    ),
-                  ),
-                ),
-                if (child != null) child,
-              ],
-            );
-          },
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: _TwinViewport(
+                frame: widget.frame,
+                height: constraints.maxHeight,
+                mode: widget.mode,
+                selectedHost: widget.selectedHost?.hostname,
+                heatMax: widget.heatMax,
+                onSelectHost: widget.onSelectHost,
+                onClearSelection: widget.onClearSelection,
+                cameraFrom: _cameraFrom,
+                cameraTo: _cameraTo,
+                cameraAnimation: _cameraController,
+                linkPulse: _linkPulseAnimation,
+                repaint: _stageTicker,
+              ),
+            ),
+            hostRail,
+          ],
         );
       },
     );
@@ -1496,16 +1511,29 @@ class _TwinScenePainter extends CustomPainter {
     required this.mode,
     required this.selectedHost,
     required this.heatMax,
-    required this.cameraFocus,
-    required this.linkPulse,
+    required this.cameraFrom,
+    required this.cameraTo,
+    required this.cameraAnimation,
+    required this.linkPulseAnimation,
+    super.repaint,
   });
 
   final TwinStateFrame frame;
   final TwinViewportMode mode;
   final String? selectedHost;
   final double heatMax;
-  final TwinPosition cameraFocus;
-  final double linkPulse;
+  final TwinPosition cameraFrom;
+  final TwinPosition cameraTo;
+  final Animation<double> cameraAnimation;
+  final Animation<double> linkPulseAnimation;
+
+  TwinPosition get _cameraFocus => TwinPosition.lerp(
+    cameraFrom,
+    cameraTo,
+    Curves.easeOutCubic.transform(cameraAnimation.value),
+  );
+
+  double get _linkPulse => linkPulseAnimation.value;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1540,6 +1568,7 @@ class _TwinScenePainter extends CustomPainter {
     final center = size.center(Offset.zero);
     final scale = twinScaleFactor(frame, size);
     final hosts = {for (final host in frame.hosts) host.hostname: host};
+    final focus = _cameraFocus;
 
     for (final link in frame.links) {
       final source = hosts[link.source];
@@ -1550,13 +1579,13 @@ class _TwinScenePainter extends CustomPainter {
         source.position,
         center,
         scale,
-        cameraFocus,
+        focus,
       );
       final targetPoint = twinProjectPoint(
         target.position,
         center,
         scale,
-        cameraFocus,
+        focus,
       );
 
       final controlPoint = Offset(
@@ -1569,7 +1598,7 @@ class _TwinScenePainter extends CustomPainter {
       final utilization = capacity > 0
           ? (measured / capacity).clamp(0.0, 1.0)
           : link.utilization.clamp(0.0, 1.0);
-      final pulse = 0.25 + 0.75 * linkPulse;
+      final pulse = 0.25 + 0.75 * _linkPulse;
       final color = Color.lerp(
         Colors.tealAccent,
         Colors.deepOrangeAccent,
@@ -1626,7 +1655,7 @@ class _TwinScenePainter extends CustomPainter {
       for (final metric in metrics) {
         final window = (46 + utilization * 70).clamp(24.0, metric.length * 0.8);
         final forwardOffset =
-            (metric.length - window) * (0.1 + linkPulse * 0.8);
+            (metric.length - window) * (0.1 + _linkPulse * 0.8);
         final highlight = metric.extractPath(
           forwardOffset,
           math.min(metric.length, forwardOffset + window),
@@ -1646,7 +1675,7 @@ class _TwinScenePainter extends CustomPainter {
         canvas.drawPath(highlight, highlightPaint);
 
         final reverseOffset =
-            (metric.length - window) * (0.2 + (1 - linkPulse) * 0.7);
+            (metric.length - window) * (0.2 + (1 - _linkPulse) * 0.7);
         final reverse = metric.extractPath(
           reverseOffset,
           math.min(metric.length, reverseOffset + window),
@@ -1715,13 +1744,14 @@ class _TwinScenePainter extends CustomPainter {
   void _paintHosts(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final scale = twinScaleFactor(frame, size);
+    final focus = _cameraFocus;
 
     for (final host in frame.hosts) {
       final position = twinProjectPoint(
         host.position,
         center,
         scale,
-        cameraFocus,
+        focus,
       );
       final status = host.status;
       final isCore = host.isCore;
@@ -1857,8 +1887,8 @@ class _TwinScenePainter extends CustomPainter {
       oldDelegate.mode != mode ||
       oldDelegate.selectedHost != selectedHost ||
       oldDelegate.heatMax != heatMax ||
-      oldDelegate.cameraFocus != cameraFocus ||
-      oldDelegate.linkPulse != linkPulse;
+      oldDelegate.cameraFrom != cameraFrom ||
+      oldDelegate.cameraTo != cameraTo;
 }
 
 double twinScaleFactor(TwinStateFrame frame, Size size) {
