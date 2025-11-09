@@ -17,10 +17,11 @@ void main() {
     await tester.pumpWidget(
       MirrorStageApp(channel: TwinChannel(connectImmediately: false)),
     );
+    await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('MIRROR STAGE'), findsOneWidget);
     expect(find.textContaining('전역 메트릭'), findsOneWidget);
     expect(find.text('위젯'), findsOneWidget);
-    expect(find.textContaining('노드를 선택하여 연결 상태를 확인하세요.'), findsOneWidget);
+    expect(find.text('노드를 선택하여 링크를 확인하세요.'), findsOneWidget);
   });
 }

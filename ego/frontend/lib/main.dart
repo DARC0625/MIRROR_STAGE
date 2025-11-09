@@ -18,7 +18,6 @@ enum SidebarWidgetType {
   globalLink,
   globalTemperature,
   commandConsole,
-  telemetry,
   hostLink,
   hostTemperature,
   processes,
@@ -777,23 +776,43 @@ class _GaugePainter extends CustomPainter {
 }
 
 class _SidebarOverviewCard extends StatelessWidget {
-  const _SidebarOverviewCard({required this.frame, required this.gaugeSize});
+  const _SidebarOverviewCard({
+    required this.frame,
+    required this.gaugeSize,
+    this.focusHost,
+  });
 
   final TwinStateFrame frame;
   final double gaugeSize;
+  final TwinHost? focusHost;
 
   @override
   Widget build(BuildContext context) {
-    final avgCpu = frame.averageCpuLoad.clamp(0, 100).toDouble();
-    final memUtil = frame.memoryUtilizationPercent.clamp(0, 100).toDouble();
-    final String? memCaption = null;
+    final host = focusHost;
+    final isHostView = host != null;
+    final headerLabel = host?.displayName ?? '전역 메트릭';
+    final cpuValue = (host?.metrics.cpuLoad ?? frame.averageCpuLoad)
+        .clamp(0, 100)
+        .toDouble();
+    final memValue = (host?.metrics.memoryUsedPercent ?? frame.memoryUtilizationPercent)
+        .clamp(0, 100)
+        .toDouble();
+
+    final cpuSubtitle = host != null
+        ? '업타임 ${_formatDuration(host.uptime)}'
+        : (frame.averageCpuTemperature > 0
+            ? '온도 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃'
+            : null);
+    final memSubtitle = host != null ? _formatHostMemorySubtitle(host) : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '전역 메트릭',
-          style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+        Text(
+          headerLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Expanded(
@@ -801,14 +820,12 @@ class _SidebarOverviewCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _AnalogGauge(
-                  label: '평균 CPU',
-                  value: avgCpu,
+                  label: isHostView ? 'CPU 사용률' : '평균 CPU',
+                  value: cpuValue,
                   maxValue: 100,
                   units: '%',
                   decimals: 1,
-                  subtitle: frame.averageCpuTemperature > 0
-                      ? '온도 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃'
-                      : null,
+                  subtitle: cpuSubtitle,
                   startColor: Colors.lightBlueAccent,
                   endColor: Colors.deepOrangeAccent,
                   size: gaugeSize,
@@ -818,11 +835,11 @@ class _SidebarOverviewCard extends StatelessWidget {
               Expanded(
                 child: _AnalogGauge(
                   label: '메모리',
-                  value: memUtil,
+                  value: memValue,
                   maxValue: 100,
                   units: '%',
                   decimals: 1,
-                  subtitle: memCaption,
+                  subtitle: memSubtitle,
                   startColor: const Color(0xFF38BDF8),
                   endColor: Colors.pinkAccent,
                   size: gaugeSize,
@@ -995,99 +1012,194 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
           ),
         )
         .toList();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dense = constraints.maxHeight < 360;
+        final controlHeight = dense ? 34.0 : 42.0;
+        final labelWidth = dense ? 60.0 : 72.0;
+        final gap = dense ? 4.0 : 6.0;
+        final fieldTextStyle = TextStyle(
+          color: Colors.white,
+          fontSize: dense ? 12 : 13,
+        );
+        final labelStyle = TextStyle(
+          color: Colors.white54,
+          fontSize: dense ? 11 : 12,
+          fontWeight: FontWeight.w600,
+        );
+        final decoration = BoxDecoration(
+          color: const Color(0x220C1A2A),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0x221B2333)),
+        );
 
-    const inputDecoration = InputDecoration(
-      isDense: true,
-      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      border: OutlineInputBorder(),
-    );
+        Widget fieldShell(Widget child) => DecoratedBox(
+              decoration: decoration,
+              child: child,
+            );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '원격 자동화',
-          style: TextStyle(
-            color: Colors.white70,
-            fontWeight: FontWeight.w600,
-            fontSize: 13,
-          ),
-        ),
-        const SizedBox(height: 6),
-        InputDecorator(
-          decoration: inputDecoration.copyWith(labelText: '대상 노드'),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _selectedHostname ?? hostItems.first.value,
-              items: hostItems,
-              onChanged: (value) => setState(() => _selectedHostname = value),
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _commandController,
-          decoration: inputDecoration.copyWith(
-            labelText: '명령어',
-            hintText: '예) ipconfig /all',
-          ),
-          minLines: 1,
-          maxLines: 2,
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _timeoutController,
-          decoration: inputDecoration.copyWith(labelText: '타임아웃(초, 선택)'),
-          keyboardType: TextInputType.number,
-        ),
-        const SizedBox(height: 6),
-        Row(
+        Widget dropdownField() => fieldShell(
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedHostname ?? hostItems.first.value,
+                    isExpanded: true,
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16),
+                    dropdownColor: const Color(0xFF0C1424),
+                    style: fieldTextStyle,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _selectedHostname = value;
+                        _formError = null;
+                      });
+                    },
+                    items: hostItems,
+                  ),
+                ),
+              ),
+            );
+
+        Widget textField(
+          TextEditingController controller, {
+          String? hint,
+          TextInputType? keyboardType,
+        }) => fieldShell(
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: TextField(
+                  controller: controller,
+                  keyboardType: keyboardType,
+                  style: fieldTextStyle,
+                  expands: true,
+                  minLines: null,
+                  maxLines: null,
+                  textAlignVertical: TextAlignVertical.center,
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    isDense: true,
+                    hintText: hint,
+                    hintStyle: fieldTextStyle.copyWith(
+                      color: Colors.white38,
+                    ),
+                  ),
+                ),
+              ),
+            );
+
+        Widget fieldRow(String label, Widget child) => SizedBox(
+              height: controlHeight,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: labelWidth,
+                    child: Text(label, style: labelStyle),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: SizedBox.expand(child: child)),
+                ],
+              ),
+            );
+
+        final buttonWidth = dense ? 74.0 : 90.0;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ElevatedButton.icon(
-              onPressed: _sending ? null : _submitCommand,
-              icon: _sending
-                  ? const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send, size: 14),
-              label: const Text('실행'),
+            const Text(
+              '원격 자동화',
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(height: gap),
+            fieldRow('노드', dropdownField()),
+            SizedBox(height: gap),
+            fieldRow(
+              '명령',
+              textField(
+                _commandController,
+                hint: '예) ipconfig /all',
+              ),
+            ),
+            SizedBox(height: gap),
+            fieldRow(
+              '타임아웃',
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox.expand(
+                      child: textField(
+                        _timeoutController,
+                        hint: '초',
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: buttonWidth,
+                    height: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _sending ? null : _submitCommand,
+                      style: ElevatedButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        textStyle: fieldTextStyle.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      child: _sending
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('실행'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (_formError != null)
-              Expanded(
+              Padding(
+                padding: EdgeInsets.only(top: gap),
                 child: Text(
                   _formError!,
                   style: const TextStyle(color: Colors.redAccent, fontSize: 11),
                 ),
               ),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            SizedBox(height: gap),
+            Expanded(
+              child: visibleJobs.isEmpty
+                  ? const Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(
+                        '명령 기록이 없습니다.',
+                        style: TextStyle(color: Colors.white38, fontSize: 11),
+                      ),
+                    )
+                  : ListView.separated(
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: EdgeInsets.zero,
+                      itemCount: visibleJobs.length,
+                      separatorBuilder: (_, __) => SizedBox(height: gap),
+                      itemBuilder: (context, index) => _CommandJobTile(
+                        color: _statusColor(visibleJobs[index].status),
+                        job: visibleJobs[index],
+                      ),
+                    ),
+            ),
           ],
-        ),
-        const SizedBox(height: 4),
-        if (_loading) const LinearProgressIndicator(minHeight: 2),
-        const SizedBox(height: 4),
-        Expanded(
-          child: visibleJobs.isEmpty
-              ? const Align(
-                  alignment: Alignment.topLeft,
-                  child: Text(
-                    '명령 기록이 없습니다.',
-                    style: TextStyle(color: Colors.white38, fontSize: 11),
-                  ),
-                )
-              : ListView.separated(
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.zero,
-                  itemCount: visibleJobs.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 6),
-                  itemBuilder: (context, index) => _CommandJobTile(
-                    color: _statusColor(visibleJobs[index].status),
-                    job: visibleJobs[index],
-                  ),
-                ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -1101,8 +1213,7 @@ class _CommandJobTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: const Color(0x110A1018),
         borderRadius: BorderRadius.circular(12),
@@ -1126,17 +1237,24 @@ class _CommandJobTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              Chip(
-                backgroundColor: color.withValues(alpha: 0.15),
-                side: BorderSide.none,
-                label: Text(
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
                   job.statusLabel,
-                  style: TextStyle(color: color, fontSize: 10),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           Text(
             '${job.hostname} · ${job.requestedLabel}',
             style: const TextStyle(color: Colors.white54, fontSize: 10),
@@ -1257,6 +1375,7 @@ class _HostChip extends StatelessWidget {
       TwinHostStatus.stale => Colors.amberAccent,
       TwinHostStatus.offline => Colors.redAccent,
     };
+    final throughputGbps = host.metrics.netThroughputGbps;
 
     return GestureDetector(
       onTap: onTap,
@@ -1315,9 +1434,9 @@ class _HostChip extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            if (host.metrics.netThroughputGbps != null)
+            if (throughputGbps != null && throughputGbps > 0)
               Text(
-                '${host.metrics.netThroughputGbps!.toStringAsFixed(2)} Gbps',
+                _formatThroughputLabel(throughputGbps),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.tealAccent, fontSize: 11),
@@ -1325,147 +1444,6 @@ class _HostChip extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _OverlayHeader extends StatelessWidget {
-  const _OverlayHeader({required this.host, required this.theme});
-
-  final TwinHost host;
-  final TextTheme theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                host.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                host.ip,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _InfoPill(
-              icon: host.isDummy
-                  ? Icons.science_outlined
-                  : Icons.shield_outlined,
-              label: host.isDummy ? '더미 노드' : '실측 노드',
-            ),
-            if (host.rack != null)
-              _InfoPill(icon: Icons.storage_rounded, label: host.rack!),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _RealtimeTelemetryCard extends StatelessWidget {
-  const _RealtimeTelemetryCard({required this.host, required this.samples});
-
-  final TwinHost host;
-  final List<_MetricSample> samples;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final uptimeText = _formatDuration(host.uptime);
-    final memorySubtitle =
-        host.memoryUsedBytes != null && host.memoryTotalBytes != null
-        ? '${_formatBytes(host.memoryUsedBytes)} / ${_formatBytes(host.memoryTotalBytes)}'
-        : '${host.metrics.memoryUsedPercent.toStringAsFixed(1)}%';
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final gaugeSize = math.max(
-          60.0,
-          math.min(90.0, (constraints.maxHeight - 28) / 2),
-        );
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF050B15),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFF1B2333)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '실시간 텔레메트리',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _AnalogGauge(
-                      label: 'CPU',
-                      value: host.metrics.cpuLoad.clamp(0, 100).toDouble(),
-                      maxValue: 100,
-                      units: '%',
-                      decimals: 1,
-                      subtitle: '업타임 $uptimeText',
-                      startColor: Colors.lightBlueAccent,
-                      endColor: Colors.deepOrangeAccent,
-                      size: gaugeSize,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _AnalogGauge(
-                      label: '메모리',
-                      value: host.metrics.memoryUsedPercent
-                          .clamp(0, 100)
-                          .toDouble(),
-                      maxValue: 100,
-                      units: '%',
-                      decimals: 1,
-                      subtitle: memorySubtitle,
-                      startColor: const Color(0xFF7C3AED),
-                      endColor: Colors.pinkAccent,
-                      size: gaugeSize,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '업타임 $uptimeText',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }
@@ -1701,9 +1679,12 @@ class _TwinScenePainter extends CustomPainter {
       );
       final sourceDescriptor = _formatInterfaceDescriptor(source, true);
       final targetDescriptor = _formatInterfaceDescriptor(target, false);
-      final bandwidthLabel = capacity > 0
-          ? '${measured.toStringAsFixed(2)} / ${capacity.toStringAsFixed(1)} Gbps'
-          : '${measured.toStringAsFixed(2)} Gbps';
+      final measuredLabel = _formatThroughputLabel(measured);
+      final capacityLabel =
+          capacity > 0 ? _formatThroughputLabel(capacity) : null;
+      final bandwidthLabel = capacityLabel != null
+          ? '$measuredLabel / $capacityLabel'
+          : measuredLabel;
       final utilizationLabel =
           '${(utilization * 100).clamp(0, 100).toStringAsFixed(0)}% 사용';
       final linkLabel = TextPainter(
@@ -2032,6 +2013,44 @@ String _formatDuration(Duration duration) {
     parts.add('${seconds}s');
   }
   return parts.join(' ');
+}
+
+String _formatThroughputLabel(double valueGbps) {
+  if (valueGbps.isNaN || valueGbps <= 0) {
+    return '0 bps';
+  }
+  final gigabits = valueGbps;
+  if (gigabits >= 1) {
+    final decimals = gigabits >= 10 ? 1 : 2;
+    return '${gigabits.toStringAsFixed(decimals)} Gbps';
+  }
+  final megabits = gigabits * 1000;
+  if (megabits >= 1) {
+    final decimals = megabits >= 100 ? 0 : 1;
+    return '${megabits.toStringAsFixed(decimals)} Mbps';
+  }
+  final kilobits = megabits * 1000;
+  if (kilobits >= 1) {
+    final decimals = kilobits >= 100 ? 0 : 1;
+    return '${kilobits.toStringAsFixed(decimals)} Kbps';
+  }
+  final bits = kilobits * 1000;
+  return bits >= 1
+      ? '${bits.toStringAsFixed(bits >= 100 ? 0 : 1)} bps'
+      : '0 bps';
+}
+
+String? _formatHostMemorySubtitle(TwinHost host) {
+  final usedBytes = host.memoryUsedBytes;
+  final totalBytes = host.memoryTotalBytes;
+  if (usedBytes != null && totalBytes != null) {
+    return '${_formatBytes(usedBytes)} / ${_formatBytes(totalBytes)}';
+  }
+  final percent = host.metrics.memoryUsedPercent;
+  if (percent.isNaN) {
+    return null;
+  }
+  return '사용 ${percent.clamp(0, 100).toStringAsFixed(1)}%';
 }
 
 class _GlassTile extends StatelessWidget {
@@ -2618,7 +2637,7 @@ class _StoragePanelState extends State<_StoragePanel> {
 // === Widget dock system =====================================================
 
 const int _kDockColumns = 4;
-const int _kDockRows = 14;
+const int _kDockRows = 13;
 
 const List<_WidgetPlacementSeed> _defaultDockPlacements = [
   _WidgetPlacementSeed(
@@ -2646,40 +2665,34 @@ const List<_WidgetPlacementSeed> _defaultDockPlacements = [
     row: 8,
   ),
   _WidgetPlacementSeed(
-    type: SidebarWidgetType.telemetry,
+    type: SidebarWidgetType.hostLink,
     wing: SidebarWing.right,
     column: 0,
     row: 0,
   ),
   _WidgetPlacementSeed(
-    type: SidebarWidgetType.hostLink,
-    wing: SidebarWing.right,
-    column: 0,
-    row: 4,
-  ),
-  _WidgetPlacementSeed(
     type: SidebarWidgetType.hostTemperature,
     wing: SidebarWing.right,
     column: 0,
-    row: 6,
+    row: 2,
   ),
   _WidgetPlacementSeed(
     type: SidebarWidgetType.processes,
     wing: SidebarWing.right,
     column: 0,
-    row: 8,
+    row: 4,
   ),
   _WidgetPlacementSeed(
     type: SidebarWidgetType.network,
     wing: SidebarWing.right,
     column: 0,
-    row: 10,
+    row: 7,
   ),
   _WidgetPlacementSeed(
     type: SidebarWidgetType.storage,
     wing: SidebarWing.right,
     column: 0,
-    row: 12,
+    row: 9,
   ),
 ];
 
@@ -2759,16 +2772,6 @@ const Map<SidebarWidgetType, _WidgetBlueprint> _widgetBlueprints = {
     heightUnits: 4,
     builder: _buildCommandConsoleWidget,
   ),
-  SidebarWidgetType.telemetry: _WidgetBlueprint(
-    type: SidebarWidgetType.telemetry,
-    displayName: '실시간 텔레메트리',
-    description: '선택한 노드의 CPU·메모리를 HUD 형태로 제공합니다.',
-    allowedWings: {SidebarWing.right},
-    widthUnits: 4,
-    heightUnits: 4,
-    requiresHost: true,
-    builder: _buildTelemetryWidget,
-  ),
   SidebarWidgetType.hostLink: _WidgetBlueprint(
     type: SidebarWidgetType.hostLink,
     displayName: '링크 상태',
@@ -2828,10 +2831,31 @@ Widget _buildGlobalMetricsWidget(
   final frame = data.frame;
   final available = data.constraints.maxHeight;
   final gaugeSize = math.max(60.0, math.min(90.0, (available - 28) / 2));
-  return _SidebarOverviewCard(frame: frame, gaugeSize: gaugeSize);
+  return _SidebarOverviewCard(
+    frame: frame,
+    gaugeSize: gaugeSize,
+    focusHost: data.selectedHost,
+  );
 }
 
 Widget _buildGlobalLinkWidget(BuildContext context, _WidgetBuildContext data) {
+  final host = data.selectedHost;
+  if (host != null) {
+    final throughput = host.metrics.netThroughputGbps ?? 0;
+    final capacity = host.metrics.netCapacityGbps;
+    final utilization = capacity != null && capacity > 0
+        ? (throughput / capacity).clamp(0.0, 1.0)
+        : null;
+    return _LinkStatusPanel(
+      title: host.displayName,
+      primaryValue: _formatThroughputLabel(throughput),
+      caption: capacity != null
+          ? '용량 ${_formatThroughputLabel(capacity)}'
+          : '용량 정보 없음',
+      utilization: utilization,
+    );
+  }
+
   final frame = data.frame;
   final throughput = frame.estimatedThroughput;
   final capacity = frame.totalLinkCapacity;
@@ -2840,9 +2864,9 @@ Widget _buildGlobalLinkWidget(BuildContext context, _WidgetBuildContext data) {
       : null;
   return _LinkStatusPanel(
     title: '클러스터 링크',
-    primaryValue: '${throughput.toStringAsFixed(2)} Gbps',
+    primaryValue: _formatThroughputLabel(throughput),
     caption: capacity > 0
-        ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
+        ? '용량 ${_formatThroughputLabel(capacity)}'
         : '용량 정보 없음',
     utilization: utilization,
   );
@@ -2852,6 +2876,10 @@ Widget _buildGlobalTemperatureWidget(
   BuildContext context,
   _WidgetBuildContext data,
 ) {
+  final host = data.selectedHost;
+  if (host != null) {
+    return _hostTemperaturePanel(host);
+  }
   final frame = data.frame;
   final maxTemp = frame.maxCpuTemperature > 0 ? frame.maxCpuTemperature : null;
   final avgTemp = frame.averageCpuTemperature > 0
@@ -2872,23 +2900,6 @@ Widget _buildCommandConsoleWidget(
   _WidgetBuildContext data,
 ) => _CommandConsoleCard(frame: data.frame, selectedHost: data.selectedHost);
 
-Widget _buildTelemetryWidget(BuildContext context, _WidgetBuildContext data) {
-  final host = data.selectedHost;
-  if (host == null) {
-    return const _DockHostGuard(message: '노드를 선택하여 연결 상태를 확인하세요.');
-  }
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _OverlayHeader(host: host, theme: Theme.of(context).textTheme),
-      const SizedBox(height: 6),
-      Expanded(
-        child: _RealtimeTelemetryCard(host: host, samples: data.samples),
-      ),
-    ],
-  );
-}
-
 Widget _buildHostLinkWidget(BuildContext context, _WidgetBuildContext data) {
   final host = data.selectedHost;
   if (host == null) {
@@ -2903,10 +2914,10 @@ Widget _buildHostLinkWidget(BuildContext context, _WidgetBuildContext data) {
   return _LinkStatusPanel(
     title: host.displayName,
     primaryValue: throughput > 0
-        ? '${throughput.toStringAsFixed(2)} Gbps'
+        ? _formatThroughputLabel(throughput)
         : '데이터 없음',
     caption: capacity != null
-        ? '용량 ${capacity.toStringAsFixed(2)} Gbps'
+        ? '용량 ${_formatThroughputLabel(capacity)}'
         : '용량 정보 없음',
     utilization: utilization,
   );
@@ -2920,6 +2931,10 @@ Widget _buildHostTemperatureWidget(
   if (host == null) {
     return const _DockHostGuard(message: '노드를 선택하여 온도를 확인하세요.');
   }
+  return _hostTemperaturePanel(host);
+}
+
+_TemperaturePanel _hostTemperaturePanel(TwinHost host) {
   final cpuTemp = host.cpuTemperature;
   final gpuTemp = host.gpuTemperature;
   final primary = cpuTemp ?? gpuTemp;
@@ -2931,7 +2946,7 @@ Widget _buildHostTemperatureWidget(
       return 'GPU 센서 없음';
     }
     if (gpuTemp != null) {
-      return 'GPU ${gpuTemp.toStringAsFixed(1)}℃';
+      return 'CPU 센서 없음';
     }
     return '센서 없음';
   }();
