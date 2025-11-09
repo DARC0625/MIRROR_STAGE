@@ -557,36 +557,43 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final hostRail = Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: RepaintBoundary(
+              child: _HostChipRail(
+                hosts: widget.frame.hosts,
+                selectedHost: widget.selectedHost?.hostname,
+                onSelect: widget.onSelectHost,
+              ),
+            ),
+          ),
+        );
+
         return AnimatedBuilder(
           animation: _stageTicker,
-          builder: (context, _) {
+          child: hostRail,
+          builder: (context, child) {
             final focus = _currentCameraFocus;
             return Stack(
               children: [
                 Positioned.fill(
-                  child: _TwinViewport(
-                    frame: widget.frame,
-                    height: constraints.maxHeight,
-                    mode: widget.mode,
-                    selectedHost: widget.selectedHost?.hostname,
-                    heatMax: widget.heatMax,
-                    onSelectHost: widget.onSelectHost,
-                    onClearSelection: widget.onClearSelection,
-                    cameraFocus: focus,
-                    linkPulse: _linkPulseAnimation.value,
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                    child: _HostChipRail(
-                      hosts: widget.frame.hosts,
+                  child: RepaintBoundary(
+                    child: _TwinViewport(
+                      frame: widget.frame,
+                      height: constraints.maxHeight,
+                      mode: widget.mode,
                       selectedHost: widget.selectedHost?.hostname,
-                      onSelect: widget.onSelectHost,
+                      heatMax: widget.heatMax,
+                      onSelectHost: widget.onSelectHost,
+                      onClearSelection: widget.onClearSelection,
+                      cameraFocus: focus,
+                      linkPulse: _linkPulseAnimation.value,
                     ),
                   ),
                 ),
+                if (child != null) child,
               ],
             );
           },
