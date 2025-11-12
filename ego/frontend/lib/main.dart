@@ -30,6 +30,8 @@ enum SidebarWidgetType {
   storage,
 }
 
+enum HostDeviceForm { server, switcher, gateway, sensor, client }
+
 void main() {
   runApp(const MirrorStageApp());
 }
@@ -1981,7 +1983,7 @@ class _TwinScenePainter extends CustomPainter {
   ) {
     final layers = <int, List<TwinHost>>{};
     for (final host in frame.hosts) {
-      final layerIndex = _layerIndex(host.position.y);
+      final layerIndex = _resolveNetworkTier(host);
       layers.putIfAbsent(layerIndex, () => []).add(host);
     }
     final keys = layers.keys.toList()..sort();
@@ -2078,7 +2080,6 @@ class _TwinScenePainter extends CustomPainter {
         .toList(growable: false);
   }
 
-  int _layerIndex(double y) => (y / 160).round();
 
   void _paintLinks(
     Canvas canvas,
@@ -2269,12 +2270,13 @@ class _TwinScenePainter extends CustomPainter {
     final focus = _cameraFocus;
 
     for (final host in frame.hosts) {
-      final basePosition = twinProjectPoint(
+      final projection = _projectPoint3d(
         host.position,
         center,
         scale,
         focus,
       );
+      final basePosition = projection.offset;
       final status = host.status;
       final isCore = host.isCore;
       final isSelected = selectedHost != null && selectedHost == host.hostname;
@@ -2305,66 +2307,16 @@ class _TwinScenePainter extends CustomPainter {
       }
 
       final radius = hostBubbleRadius(host);
-      final towerHeight = 18.0 + host.metrics.cpuLoad * 0.15;
-      final topPoints = _isoDiamondPoints(basePosition, radius);
-
-      final sideRight = Path()
-        ..moveTo(topPoints[1].dx, topPoints[1].dy)
-        ..lineTo(topPoints[2].dx, topPoints[2].dy)
-        ..lineTo(topPoints[2].dx, topPoints[2].dy + towerHeight)
-        ..lineTo(topPoints[1].dx, topPoints[1].dy + towerHeight)
-        ..close();
-      final sideLeft = Path()
-        ..moveTo(topPoints[3].dx, topPoints[3].dy)
-        ..lineTo(topPoints[2].dx, topPoints[2].dy)
-        ..lineTo(topPoints[2].dx, topPoints[2].dy + towerHeight)
-        ..lineTo(topPoints[3].dx, topPoints[3].dy + towerHeight)
-        ..close();
-
-      final rightPaint = Paint()
-        ..shader = ui.Gradient.linear(
-          topPoints[1],
-          topPoints[1] + Offset(0, towerHeight),
-          [
-            color.withValues(alpha: 0.75),
-            Colors.blueGrey.withValues(alpha: 0.35),
-          ],
-        );
-      canvas.drawPath(sideRight, rightPaint);
-      canvas.drawPath(
-        sideLeft,
-        Paint()
-          ..shader = ui.Gradient.linear(
-            topPoints[3],
-            topPoints[3] + Offset(0, towerHeight),
-            [
-              color.withValues(alpha: 0.55),
-              Colors.blueGrey.withValues(alpha: 0.25),
-            ],
-          ),
+      final form = _resolveDeviceForm(host);
+      _drawDeviceForm(
+        canvas: canvas,
+        position: basePosition,
+        radius: radius,
+        height: 20.0 + projection.scaleFactor * 50,
+        color: color,
+        form: form,
+        isSelected: isSelected,
       );
-
-      final top = Path()..addPolygon(topPoints, true);
-      final topPaint = Paint()
-        ..shader = ui.Gradient.radial(
-          basePosition,
-          radius * 1.4,
-          [
-            Colors.white.withValues(alpha: 0.95),
-            color.withValues(alpha: isCore ? 0.95 : 0.7),
-          ],
-        );
-      canvas.drawPath(top, topPaint);
-
-      if (isSelected) {
-        canvas.drawPath(
-          top,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.6
-            ..color = Colors.white.withValues(alpha: 0.7),
-        );
-      }
 
       if (host.isDummy && !isCore) {
         final markerPath = Path()
@@ -2381,6 +2333,7 @@ class _TwinScenePainter extends CustomPainter {
       }
 
       if (selectedHost != host.hostname) {
+        final labelAnchor = _isoDiamondPoints(basePosition, radius).first;
         final labelText = host.displayName;
         final textPainter = TextPainter(
           text: TextSpan(
@@ -2395,10 +2348,246 @@ class _TwinScenePainter extends CustomPainter {
         )..layout(maxWidth: 160);
         textPainter.paint(
           canvas,
-          topPoints[0] +
+          labelAnchor +
               Offset(-textPainter.width / 2, -textPainter.height - 6),
         );
       }
+    }
+  }
+
+  void _drawDeviceForm({
+    required Canvas canvas,
+    required Offset position,
+    required double radius,
+    required double height,
+    required Color color,
+    required HostDeviceForm form,
+    required bool isSelected,
+  }) {
+    switch (form) {
+      case HostDeviceForm.server:
+        _drawServerCube(canvas, position, radius, height, color, isSelected);
+        break;
+      case HostDeviceForm.switcher:
+        _drawSwitchBlade(canvas, position, radius, color, isSelected);
+        break;
+      case HostDeviceForm.gateway:
+        _drawGatewayPrism(canvas, position, radius, color, isSelected);
+        break;
+      case HostDeviceForm.sensor:
+        _drawSensorDisk(canvas, position, radius, color, isSelected);
+        break;
+      case HostDeviceForm.client:
+        _drawClientNode(canvas, position, radius, color, isSelected);
+        break;
+    }
+  }
+
+  void _drawServerCube(
+    Canvas canvas,
+    Offset position,
+    double radius,
+    double height,
+    Color color,
+    bool isSelected,
+  ) {
+    final topPoints = _isoDiamondPoints(position, radius);
+    final rightPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        topPoints[1],
+        topPoints[1] + Offset(0, height),
+        [
+          color.withValues(alpha: 0.75),
+          Colors.blueGrey.withValues(alpha: 0.35),
+        ],
+      );
+    final leftPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        topPoints[3],
+        topPoints[3] + Offset(0, height),
+        [
+          color.withValues(alpha: 0.55),
+          Colors.blueGrey.withValues(alpha: 0.25),
+        ],
+      );
+    final rightFace = Path()
+      ..moveTo(topPoints[1].dx, topPoints[1].dy)
+      ..lineTo(topPoints[2].dx, topPoints[2].dy)
+      ..lineTo(topPoints[2].dx, topPoints[2].dy + height)
+      ..lineTo(topPoints[1].dx, topPoints[1].dy + height)
+      ..close();
+    canvas.drawPath(rightFace, rightPaint);
+
+    final leftFace = Path()
+      ..moveTo(topPoints[3].dx, topPoints[3].dy)
+      ..lineTo(topPoints[2].dx, topPoints[2].dy)
+      ..lineTo(topPoints[2].dx, topPoints[2].dy + height)
+      ..lineTo(topPoints[3].dx, topPoints[3].dy + height)
+      ..close();
+    canvas.drawPath(leftFace, leftPaint);
+
+    final top = Path()..addPolygon(topPoints, true);
+    final topPaint = Paint()
+      ..shader = ui.Gradient.radial(
+        position,
+        radius * 1.4,
+        [
+          Colors.white.withValues(alpha: 0.95),
+          color.withValues(alpha: 0.75),
+        ],
+      );
+    canvas.drawPath(top, topPaint);
+    if (isSelected) {
+      canvas.drawPath(
+        top,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = Colors.white.withValues(alpha: 0.7),
+      );
+    }
+  }
+
+  void _drawSwitchBlade(
+    Canvas canvas,
+    Offset position,
+    double radius,
+    Color color,
+    bool isSelected,
+  ) {
+    final width = radius * 1.6;
+    final height = radius * 0.6;
+    final baseRect = Rect.fromCenter(
+      center: position,
+      width: width * 2,
+      height: height * 2,
+    );
+    final rect = RRect.fromRectAndRadius(baseRect, const Radius.circular(18));
+    final paint = Paint()
+      ..shader = ui.Gradient.linear(
+        baseRect.topLeft,
+        baseRect.bottomRight,
+        [
+          color.withValues(alpha: 0.65),
+          Colors.blueGrey.withValues(alpha: 0.4),
+        ],
+      );
+    canvas.drawRRect(rect, paint);
+    final portPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.5)
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    for (var i = -3; i <= 3; i++) {
+      final x = position.dx + i * (width / 7);
+      canvas.drawLine(
+        Offset(x, position.dy - height * 0.2),
+        Offset(x, position.dy + height * 0.2),
+        portPaint,
+      );
+    }
+    if (isSelected) {
+      canvas.drawRRect(
+        rect.inflate(4),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = Colors.white.withValues(alpha: 0.6),
+      );
+    }
+  }
+
+  void _drawGatewayPrism(
+    Canvas canvas,
+    Offset position,
+    double radius,
+    Color color,
+    bool isSelected,
+  ) {
+    final path = Path()
+      ..moveTo(position.dx, position.dy - radius)
+      ..lineTo(position.dx + radius * 1.4, position.dy)
+      ..lineTo(position.dx, position.dy + radius * 1.1)
+      ..lineTo(position.dx - radius * 1.4, position.dy)
+      ..close();
+    final paint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(position.dx, position.dy - radius),
+        Offset(position.dx, position.dy + radius),
+        [
+          Colors.white.withValues(alpha: 0.9),
+          color.withValues(alpha: 0.6),
+        ],
+      );
+    canvas.drawPath(path, paint);
+    if (isSelected) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = Colors.white.withValues(alpha: 0.7),
+      );
+    }
+  }
+
+  void _drawSensorDisk(
+    Canvas canvas,
+    Offset position,
+    double radius,
+    Color color,
+    bool isSelected,
+  ) {
+    final r = radius * 0.8;
+    final paint = Paint()
+      ..shader = ui.Gradient.radial(
+        position,
+        r * 1.3,
+        [
+          color.withValues(alpha: 0.9),
+          Colors.blueGrey.withValues(alpha: 0.2),
+        ],
+      );
+    canvas.drawOval(
+      Rect.fromCircle(center: position, radius: r),
+      paint,
+    );
+    if (isSelected) {
+      canvas.drawOval(
+        Rect.fromCircle(center: position, radius: r + 4),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = Colors.white.withValues(alpha: 0.6),
+      );
+    }
+  }
+
+  void _drawClientNode(
+    Canvas canvas,
+    Offset position,
+    double radius,
+    Color color,
+    bool isSelected,
+  ) {
+    final path = Path()
+      ..moveTo(position.dx, position.dy - radius)
+      ..lineTo(position.dx + radius * 0.9, position.dy + radius * 0.6)
+      ..lineTo(position.dx - radius * 0.9, position.dy + radius * 0.6)
+      ..close();
+    final paint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(position.dx, position.dy - radius),
+        Offset(position.dx, position.dy + radius),
+        [
+          color.withValues(alpha: 0.8),
+          Colors.blueGrey.withValues(alpha: 0.2),
+        ],
+      );
+    canvas.drawPath(path, paint);
+    if (isSelected) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = Colors.white.withValues(alpha: 0.7),
+      );
     }
   }
 
@@ -2622,6 +2811,58 @@ String _formatThroughputLabel(double valueGbps) {
   return bits >= 1
       ? '${bits.toStringAsFixed(bits >= 100 ? 0 : 1)} bps'
       : '0 bps';
+}
+
+int _resolveNetworkTier(TwinHost host) {
+  final tags = host.diagnostics.tags;
+  final candidates = [
+    tags['net.layer'],
+    tags['network.layer'],
+    tags['tier'],
+    tags['zone'],
+  ];
+  for (final value in candidates) {
+    if (value == null || value.isEmpty) continue;
+    final parsed = int.tryParse(value);
+    if (parsed != null) return parsed;
+    switch (value.toLowerCase()) {
+      case 'wan':
+      case 'core':
+      case 'l3':
+        return 3;
+      case 'distribution':
+      case 'agg':
+      case 'l2':
+        return 2;
+      case 'access':
+      case 'edge':
+      case 'l1':
+        return 1;
+    }
+  }
+  return (host.position.y / 160).round();
+}
+
+HostDeviceForm _resolveDeviceForm(TwinHost host) {
+  final tags = host.diagnostics.tags.map((k, v) => MapEntry(k.toLowerCase(), v.toLowerCase()));
+  String descriptor = '';
+  descriptor = tags['device'] ??
+      tags['type'] ??
+      host.hardware.systemModel?.toLowerCase() ??
+      host.platform.toLowerCase();
+  if (descriptor.contains('switch') || descriptor.contains('router')) {
+    return HostDeviceForm.switcher;
+  }
+  if (descriptor.contains('gateway') || descriptor.contains('wan')) {
+    return HostDeviceForm.gateway;
+  }
+  if (descriptor.contains('pi') || descriptor.contains('sensor') || descriptor.contains('edge')) {
+    return HostDeviceForm.sensor;
+  }
+  if (descriptor.contains('laptop') || descriptor.contains('client') || descriptor.contains('desktop')) {
+    return HostDeviceForm.client;
+  }
+  return HostDeviceForm.server;
 }
 
 String? _formatHostMemorySubtitle(TwinHost host) {
