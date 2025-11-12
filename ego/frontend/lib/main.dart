@@ -151,11 +151,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
             : 100.0;
         final tierAssignments = _resolveTierAssignments(frame);
         final layoutOverrides = _buildLayoutOverrides(frame, tierAssignments);
-        final tierOptions = {
-          ...tierAssignments.values,
-          ..._customTiers,
-        }.toList()
-          ..sort();
+        final tierOptions = _availableTiers(tierAssignments);
 
         return Scaffold(
           backgroundColor: const Color(0xFF05080D),
@@ -173,14 +169,14 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                       onSelectHost: _selectHost,
                       onClearSelection: _clearSelection,
                       tierAssignments: tierAssignments,
-                    layoutPositions: layoutOverrides,
-                    focusedTier: _focusedTier,
-                    iconOverrides: _iconOverrides,
-                    formOverrides: _formOverrides,
-                    onClearTierFocus: () => _setTierFocus(null),
-                    onEditDevice: _handleDeviceEdit,
-                    tierPalette: tierOptions.toSet(),
-                  );
+                      layoutPositions: layoutOverrides,
+                      focusedTier: _focusedTier,
+                      iconOverrides: _iconOverrides,
+                      formOverrides: _formOverrides,
+                      onClearTierFocus: () => _setTierFocus(null),
+                      onEditDevice: _handleDeviceEdit,
+                      tierPalette: tierOptions.toSet(),
+                    );
                     final leftPanel = _Sidebar(
                       frame: frame,
                       selectedHost: selectedHost,
@@ -269,12 +265,16 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     return result;
   }
 
+  /// Packs every host inside a bounded tier plane so the scene stays within
+  /// the default camera framing even as devices are added dynamically.
   Map<String, TwinPosition> _buildLayoutOverrides(
     TwinStateFrame frame,
     Map<String, int> tierAssignments,
   ) {
-    const nodeSpacing = 260.0;
-    const depthSpacing = 420.0;
+    const maxTierWidth = 720.0;
+    const minSpacing = 160.0;
+    const tierElevation = 140.0;
+    const depthSpacing = 320.0;
     final groups = <int, List<TwinHost>>{};
     for (final host in frame.hosts) {
       final tier = tierAssignments[host.hostname] ?? 0;
@@ -285,11 +285,18 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
       final tier = entry.key;
       final hosts = entry.value
         ..sort((a, b) => a.hostname.compareTo(b.hostname));
+      if (hosts.isEmpty) continue;
+      final span = math.max(1, hosts.length - 1);
+      final width = hosts.length <= 1
+          ? 0.0
+          : math.min(maxTierWidth, span * minSpacing);
+      final startX = hosts.length <= 1 ? 0.0 : -width / 2;
+      final step = hosts.length <= 1 ? 0.0 : width / span;
       for (var i = 0; i < hosts.length; i++) {
-        final offset = (i - (hosts.length - 1) / 2) * nodeSpacing;
+        final offsetX = hosts.length <= 1 ? 0.0 : startX + i * step;
         overrides[hosts[i].hostname] = TwinPosition(
-          x: offset,
-          y: tier * 160.0,
+          x: offsetX,
+          y: tier * tierElevation,
           z: tier * depthSpacing,
         );
       }
@@ -932,6 +939,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
   Offset _focalStart = Offset.zero;
   double _zoom = 1.0;
   double _zoomStart = 1.0;
+  Size? _viewportSize;
 
   @override
   void initState() {
@@ -1010,10 +1018,23 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
     );
   }
 
+  Offset _clampPan(Offset candidate) {
+    final size = _viewportSize;
+    if (size == null) return candidate;
+    final limitX = size.width * 0.35;
+    final limitY = size.height * 0.35;
+    return Offset(
+      candidate.dx.clamp(-limitX, limitX),
+      candidate.dy.clamp(-limitY, limitY),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        _viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+        _panOffset = _clampPan(_panOffset);
         final hostRail = Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
@@ -1034,6 +1055,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
               setState(() {
                 _zoom = (_zoom - event.scrollDelta.dy * 0.001)
                     .clamp(0.6, 2.5);
+                _panOffset = _clampPan(_panOffset);
               });
             }
           },
@@ -1047,7 +1069,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
               setState(() {
                 _zoom = (_zoomStart * details.scale).clamp(0.6, 2.5);
                 final delta = details.focalPoint - _focalStart;
-                _panOffset = _panStart + delta;
+                _panOffset = _clampPan(_panStart + delta);
               });
             },
             child: Stack(
@@ -2507,6 +2529,30 @@ class _TwinScenePainter extends CustomPainter {
           ..strokeWidth = 1.2
           ..color = Colors.white.withValues(alpha: 0.12),
       );
+      final centroidX =
+          top.fold<double>(0, (sum, point) => sum + point.dx) / top.length;
+      final centroidY =
+          top.fold<double>(0, (sum, point) => sum + point.dy) / top.length;
+      final labelPainter = TextPainter(
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+        text: TextSpan(
+          text: 'L$layer',
+          style: TextStyle(
+            color: Colors.white.withValues(
+              alpha: highlighted ? 0.85 : 0.35,
+            ),
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+            letterSpacing: 0.5,
+          ),
+        ),
+      )..layout();
+      final labelOffset = Offset(
+        centroidX - labelPainter.width / 2,
+        centroidY - labelPainter.height / 2,
+      );
+      labelPainter.paint(canvas, labelOffset);
     }
   }
 
