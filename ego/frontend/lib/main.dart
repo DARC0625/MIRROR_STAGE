@@ -88,6 +88,12 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
   String? _selectedHostName;
   late final _WidgetDockController _dockController;
   bool _showWidgetPalette = false;
+  int? _focusedTier;
+  final Map<String, int> _tierOverrides = {};
+  final Set<int> _customTiers = {};
+  int _nextCustomTier = 4;
+  final Map<String, HostDeviceForm> _formOverrides = {};
+  final Map<String, String> _iconOverrides = {};
 
   @override
   void initState() {
@@ -143,6 +149,13 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
         final heatMax = frame.maxCpuTemperature > 0
             ? frame.maxCpuTemperature
             : 100.0;
+        final tierAssignments = _resolveTierAssignments(frame);
+        final layoutOverrides = _buildLayoutOverrides(frame, tierAssignments);
+        final tierOptions = {
+          ...tierAssignments.values,
+          ..._customTiers,
+        }.toList()
+          ..sort();
 
         return Scaffold(
           backgroundColor: const Color(0xFF05080D),
@@ -159,6 +172,13 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                       heatMax: heatMax,
                       onSelectHost: _selectHost,
                       onClearSelection: _clearSelection,
+                      tierAssignments: tierAssignments,
+                      layoutPositions: layoutOverrides,
+                      focusedTier: _focusedTier,
+                      iconOverrides: _iconOverrides,
+                      formOverrides: _formOverrides,
+                      onClearTierFocus: () => _setTierFocus(null),
+                      onEditDevice: _handleDeviceEdit,
                     );
                     final leftPanel = _Sidebar(
                       frame: frame,
@@ -167,6 +187,11 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                       wing: SidebarWing.left,
                       paletteOpen: _showWidgetPalette,
                       onTogglePalette: _togglePalette,
+                      focusedTier: _focusedTier,
+                      tierOptions: tierOptions,
+                      onTierFocus: _setTierFocus,
+                      onOpenTierManager: () =>
+                          _openTierManager(context, frame, tierAssignments),
                     );
                     final rightPanel = _StatusSidebar(
                       frame: frame,
@@ -228,6 +253,111 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
       setState(() => _selectedHostName = null);
     }
   }
+
+  void _setTierFocus(int? tier) {
+    if (_focusedTier == tier) return;
+    setState(() => _focusedTier = tier);
+  }
+
+  Map<String, int> _resolveTierAssignments(TwinStateFrame frame) {
+    final result = <String, int>{};
+    for (final host in frame.hosts) {
+      result[host.hostname] =
+          _tierOverrides[host.hostname] ?? _resolveNetworkTier(host);
+    }
+    return result;
+  }
+
+  Map<String, TwinPosition> _buildLayoutOverrides(
+    TwinStateFrame frame,
+    Map<String, int> tierAssignments,
+  ) {
+    const nodeSpacing = 260.0;
+    const depthSpacing = 420.0;
+    final groups = <int, List<TwinHost>>{};
+    for (final host in frame.hosts) {
+      final tier = tierAssignments[host.hostname] ?? 0;
+      groups.putIfAbsent(tier, () => []).add(host);
+    }
+    final overrides = <String, TwinPosition>{};
+    for (final entry in groups.entries) {
+      final tier = entry.key;
+      final hosts = entry.value
+        ..sort((a, b) => a.hostname.compareTo(b.hostname));
+      for (var i = 0; i < hosts.length; i++) {
+        final offset = (i - (hosts.length - 1) / 2) * nodeSpacing;
+        overrides[hosts[i].hostname] = TwinPosition(
+          x: offset,
+          y: tier * 160.0,
+          z: tier * depthSpacing,
+        );
+      }
+    }
+    return overrides;
+  }
+
+  void _openTierManager(
+    BuildContext context,
+    TwinStateFrame frame,
+    Map<String, int> assignments,
+  ) {
+    final removable = {..._customTiers}
+      ..removeWhere((tier) => assignments.values.contains(tier));
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF05080D),
+      builder: (context) {
+        return _TierManagerSheet(
+          frame: frame,
+          assignments: assignments,
+          tiers: {
+            ...assignments.values,
+            ..._customTiers,
+          }.toList()
+            ..sort(),
+          onAddTier: () {
+            setState(() {
+              _customTiers.add(_nextCustomTier);
+              _nextCustomTier += 1;
+            });
+          },
+          onRemoveTier: (tier) {
+            if (!removable.contains(tier)) {
+              return;
+            }
+            setState(() {
+              _customTiers.remove(tier);
+              _tierOverrides.removeWhere((_, value) => value == tier);
+            });
+          },
+          onAssignTier: (hostname, tier) {
+            assignments[hostname] = tier;
+            setState(() {
+              _tierOverrides[hostname] = tier;
+            });
+          },
+          removableTiers: removable,
+        );
+      },
+    );
+  }
+
+  void _handleDeviceEdit(
+    String hostname,
+    HostDeviceForm form,
+    String? iconPath,
+  ) {
+    setState(() {
+      _formOverrides[hostname] = form;
+      final trimmed = iconPath?.trim();
+      if (trimmed == null || trimmed.isEmpty) {
+        _iconOverrides.remove(hostname);
+      } else {
+        _iconOverrides[hostname] = trimmed;
+      }
+    });
+  }
 }
 
 class _Sidebar extends StatelessWidget {
@@ -238,6 +368,10 @@ class _Sidebar extends StatelessWidget {
     required this.wing,
     required this.paletteOpen,
     required this.onTogglePalette,
+    required this.focusedTier,
+    required this.tierOptions,
+    required this.onTierFocus,
+    required this.onOpenTierManager,
   });
 
   final TwinStateFrame frame;
@@ -246,6 +380,10 @@ class _Sidebar extends StatelessWidget {
   final SidebarWing wing;
   final bool paletteOpen;
   final VoidCallback onTogglePalette;
+  final int? focusedTier;
+  final List<int> tierOptions;
+  final ValueChanged<int?> onTierFocus;
+  final VoidCallback onOpenTierManager;
 
   @override
   Widget build(BuildContext context) {
@@ -272,6 +410,17 @@ class _Sidebar extends StatelessWidget {
               _WidgetPaletteButton(
                 isActive: paletteOpen,
                 onPressed: onTogglePalette,
+              ),
+              const SizedBox(width: 8),
+              _TierButton(
+                focusedTier: focusedTier,
+                tiers: tierOptions,
+                onChanged: onTierFocus,
+              ),
+              IconButton(
+                tooltip: '계층 관리',
+                onPressed: onOpenTierManager,
+                icon: const Icon(Icons.layers_outlined, size: 18),
               ),
             ],
           ),
@@ -392,11 +541,18 @@ class _TwinViewport extends StatelessWidget {
     required this.heatMax,
     required this.onSelectHost,
     required this.onClearSelection,
+    required this.onClearTierFocus,
     required this.cameraFrom,
     required this.cameraTo,
     required this.cameraAnimation,
     required this.linkPulse,
     required this.repaint,
+    required this.tierAssignments,
+    required this.layoutPositions,
+    required this.focusedTier,
+    required this.iconOverrides,
+    required this.formOverrides,
+    required this.onRequestEditDevice,
   });
 
   final TwinStateFrame frame;
@@ -406,11 +562,18 @@ class _TwinViewport extends StatelessWidget {
   final double heatMax;
   final ValueChanged<String> onSelectHost;
   final VoidCallback onClearSelection;
+  final VoidCallback onClearTierFocus;
   final TwinPosition cameraFrom;
   final TwinPosition cameraTo;
   final Animation<double> cameraAnimation;
   final ValueListenable<double> linkPulse;
   final Listenable repaint;
+  final Map<String, int> tierAssignments;
+  final Map<String, TwinPosition> layoutPositions;
+  final int? focusedTier;
+  final Map<String, String> iconOverrides;
+  final Map<String, HostDeviceForm> formOverrides;
+  final void Function(TwinHost host) onRequestEditDevice;
 
   TwinPosition get _cameraFocus => TwinPosition.lerp(
     cameraFrom,
@@ -435,103 +598,142 @@ class _TwinViewport extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, viewportConstraints) {
-          final size = Size(
-            viewportConstraints.maxWidth,
-            viewportConstraints.maxHeight,
-          );
-          final center = size.center(Offset.zero);
-          final scale = twinScaleFactor(frame, size);
-          final focus = _cameraFocus;
-          final hostPositions = <TwinHost, Offset>{
-            for (final host in frame.hosts)
-              host: twinProjectPoint(
-                host.position,
-                center,
-                scale,
-                focus,
-              ),
-          };
-          final selectedHostModel = selectedHost != null
-              ? frame.hostByName(selectedHost!)
-              : null;
-          Widget? holoCard;
-          if (selectedHostModel != null) {
-            final anchor = hostPositions[selectedHostModel];
-            if (anchor != null) {
-              const cardSize = Size(280, 176);
-              final showRight = anchor.dx < size.width * 0.5;
-              final horizontalOffset = 32.0;
-              final desiredLeft = showRight
-                  ? anchor.dx + horizontalOffset
-                  : anchor.dx - cardSize.width - horizontalOffset;
-              final clampedLeft = desiredLeft
-                  .clamp(8.0, size.width - cardSize.width - 8.0);
-              final clampedTop = (anchor.dy - cardSize.height * 0.55)
-                  .clamp(8.0, size.height - cardSize.height - 8.0);
-              holoCard = Positioned(
-                left: clampedLeft,
-                top: clampedTop,
-                width: cardSize.width,
-                child: IgnorePointer(
-                  ignoring: true,
-                  child: _HostHoloCard(
-                    host: selectedHostModel,
-                    preferRight: showRight,
-                  ),
-                ),
+              final size = Size(
+                viewportConstraints.maxWidth,
+                viewportConstraints.maxHeight,
               );
-            }
-          }
-
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown: (details) {
-                  final tap = details.localPosition;
-                  TwinHost? nearest;
-                  double minDistance = double.infinity;
-                  for (final entry in hostPositions.entries) {
-                    final host = entry.key;
-                    final point = entry.value;
-                    final radius = hostBubbleRadius(host);
-                    final distance = (tap - point).distance;
-                    if (distance <= radius + 14 && distance < minDistance) {
-                      nearest = host;
-                      minDistance = distance;
-                    }
-                  }
-                  if (nearest != null) {
-                    onSelectHost(nearest.hostname);
-                  } else {
-                    onClearSelection();
-                  }
-                },
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    isComplex: true,
-                    willChange: true,
-                    painter: _TwinScenePainter(
-                      frame,
-                      mode: mode,
-                      selectedHost: selectedHost,
-                      heatMax: heatMax,
-                      cameraFrom: cameraFrom,
-                      cameraTo: cameraTo,
-                      cameraAnimation: cameraAnimation,
-                      linkPulse: linkPulse,
-                      repaint: repaint,
-                    ),
-                    child: const SizedBox.expand(),
+              final center = size.center(Offset.zero);
+              final scale = twinScaleFactor(frame, size);
+              final focus = _cameraFocus;
+              final projectionMap = <TwinHost, _ProjectedPoint>{
+                for (final host in frame.hosts)
+                  host: _projectPoint3d(
+                    layoutPositions[host.hostname] ?? host.position,
+                    center,
+                    scale,
+                    focus,
                   ),
-                ),
-              ),
-              if (holoCard != null) holoCard,
-            ],
-          );
-        },
-      ),
+              };
+              final selectedHostModel = selectedHost != null
+                  ? frame.hostByName(selectedHost!)
+                  : null;
+              Widget? holoCard;
+              if (selectedHostModel != null) {
+                final anchor = projectionMap[selectedHostModel]?.offset;
+                if (anchor != null) {
+                  const cardSize = Size(320, 200);
+                  final showRight = anchor.dx < size.width * 0.5;
+                  final horizontalOffset = 24.0;
+                  final desiredLeft = showRight
+                      ? anchor.dx + horizontalOffset
+                      : anchor.dx - cardSize.width - horizontalOffset;
+                  final clampedLeft = desiredLeft
+                      .clamp(8.0, size.width - cardSize.width - 8.0);
+                  final clampedTop = (anchor.dy - cardSize.height * 0.5)
+                      .clamp(8.0, size.height - cardSize.height - 8.0);
+                  holoCard = Positioned(
+                    left: clampedLeft,
+                    top: clampedTop,
+                    width: cardSize.width,
+                    child: _HostHoloCard(
+                      host: selectedHostModel,
+                      preferRight: showRight,
+                      formOverride: formOverrides[selectedHostModel.hostname],
+                      iconPath: iconOverrides[selectedHostModel.hostname] ??
+                          selectedHostModel.diagnostics.tags['icon'],
+                      onEdit: () => onRequestEditDevice(selectedHostModel),
+                    ),
+                  );
+                }
+              }
+
+              final markerWidgets = projectionMap.entries.map((entry) {
+                final host = entry.key;
+                final projection = entry.value;
+                final tier = tierAssignments[host.hostname];
+                final highlighted =
+                    focusedTier == null || focusedTier == tier;
+                final iconPath = iconOverrides[host.hostname] ??
+                    host.diagnostics.tags['icon'] ??
+                    host.diagnostics.tags['iconPath'];
+                final form =
+                    formOverrides[host.hostname] ?? _resolveDeviceForm(host);
+                return Positioned(
+                  left: projection.offset.dx - 20,
+                  top: projection.offset.dy - 20,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: highlighted ? 1 : 0.25,
+                      child: Transform.scale(
+                        scale: projection.scaleFactor.clamp(0.7, 1.2),
+                        origin: const Offset(0, 0),
+                        child: _DeviceIconMarker(
+                          assetPath: iconPath,
+                          form: form,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList();
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (details) {
+                      final tap = details.localPosition;
+                      TwinHost? nearest;
+                      double minDistance = double.infinity;
+                      projectionMap.forEach((host, projection) {
+                        final radius = hostBubbleRadius(host);
+                        final distance = (tap - projection.offset).distance;
+                        if (distance <= radius + 18 && distance < minDistance) {
+                          nearest = host;
+                          minDistance = distance;
+                        }
+                      });
+                      if (nearest != null) {
+                        onSelectHost(nearest!.hostname);
+                      } else {
+                        onClearSelection();
+                        onClearTierFocus();
+                      }
+                    },
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        isComplex: true,
+                        willChange: true,
+                        painter: _TwinScenePainter(
+                          frame,
+                          mode: mode,
+                          selectedHost: selectedHost,
+                          heatMax: heatMax,
+                          cameraFrom: cameraFrom,
+                          cameraTo: cameraTo,
+                          cameraAnimation: cameraAnimation,
+                          linkPulse: linkPulse,
+                          repaint: repaint,
+                          projections: {
+                            for (final entry in projectionMap.entries)
+                              entry.key.hostname: entry.value,
+                          },
+                          tierAssignments: tierAssignments,
+                          focusedTier: focusedTier,
+                          layoutPositions: layoutPositions,
+                          formOverrides: formOverrides,
+                        ),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ),
+                  ...markerWidgets,
+                  if (holoCard != null) holoCard,
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -546,6 +748,13 @@ class _TwinStage extends StatefulWidget {
     required this.heatMax,
     required this.onSelectHost,
     required this.onClearSelection,
+    required this.tierAssignments,
+    required this.layoutPositions,
+    required this.focusedTier,
+    required this.iconOverrides,
+    required this.formOverrides,
+    required this.onClearTierFocus,
+    required this.onEditDevice,
   });
 
   final TwinStateFrame frame;
@@ -554,6 +763,14 @@ class _TwinStage extends StatefulWidget {
   final double heatMax;
   final ValueChanged<String> onSelectHost;
   final VoidCallback onClearSelection;
+  final Map<String, int> tierAssignments;
+  final Map<String, TwinPosition> layoutPositions;
+  final int? focusedTier;
+  final Map<String, String> iconOverrides;
+  final Map<String, HostDeviceForm> formOverrides;
+  final VoidCallback onClearTierFocus;
+  final void Function(String hostname, HostDeviceForm form, String? iconPath)
+      onEditDevice;
 
   @override
   State<_TwinStage> createState() => _TwinStageState();
@@ -654,11 +871,18 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
                 heatMax: widget.heatMax,
                 onSelectHost: widget.onSelectHost,
                 onClearSelection: widget.onClearSelection,
+                onClearTierFocus: widget.onClearTierFocus,
                 cameraFrom: _cameraFrom,
                 cameraTo: _cameraTo,
                 cameraAnimation: _cameraController,
                 linkPulse: _linkPulseValue,
                 repaint: _stageTicker,
+                tierAssignments: widget.tierAssignments,
+                layoutPositions: widget.layoutPositions,
+                focusedTier: widget.focusedTier,
+                iconOverrides: widget.iconOverrides,
+                formOverrides: widget.formOverrides,
+                onRequestEditDevice: _handleEditRequest,
               ),
             ),
             hostRail,
@@ -666,6 +890,78 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
         );
       },
     );
+  }
+
+  void _handleEditRequest(TwinHost host) {
+    final currentForm =
+        widget.formOverrides[host.hostname] ?? _resolveDeviceForm(host);
+    final currentIcon =
+        widget.iconOverrides[host.hostname] ?? host.diagnostics.tags['icon'];
+    var selectedForm = currentForm;
+    final controller = TextEditingController(text: currentIcon ?? '');
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF0B121D),
+              title: Text('${host.displayName} 장비 편집'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('장비 유형'),
+                  const SizedBox(height: 6),
+                  DropdownButton<HostDeviceForm>(
+                    value: selectedForm,
+                    items: HostDeviceForm.values
+                        .map(
+                          (form) => DropdownMenuItem(
+                            value: form,
+                            child: Text(_formLabel(form)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setModalState(() {
+                        selectedForm = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('아이콘 에셋 경로'),
+                  TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      hintText: 'assets/device_icons/server.png',
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('취소'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    widget.onEditDevice(
+                      host.hostname,
+                      selectedForm,
+                      controller.text,
+                    );
+                    Navigator.pop(context);
+                  },
+                  child: const Text('저장'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((_) => controller.dispose());
   }
 }
 
@@ -1521,108 +1817,20 @@ class _HostChip extends StatelessWidget {
   }
 }
 
-class _HostHoloCard extends StatefulWidget {
+class _HostHoloCard extends StatelessWidget {
   const _HostHoloCard({
     required this.host,
     required this.preferRight,
+    this.formOverride,
+    this.iconPath,
+    this.onEdit,
   });
 
   final TwinHost host;
   final bool preferRight;
-
-  @override
-  State<_HostHoloCard> createState() => _HostHoloCardState();
-}
-
-class _HostHoloCardState extends State<_HostHoloCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2600),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      child: _HostHoloSurface(
-        host: widget.host,
-        preferRight: widget.preferRight,
-      ),
-      builder: (context, child) {
-        final phase = _controller.value;
-        final wave = math.sin(phase * math.pi * 2);
-        final scale = 1 + wave.abs() * 0.015;
-        final glitchOpacity = wave > 0.8 ? (wave - 0.8) * 3 : 0.0;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: -26,
-              height: 42,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      colors: [
-                        Colors.tealAccent.withValues(alpha: 0.22),
-                        Colors.transparent,
-                      ],
-                      radius: 0.95,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Transform.scale(scale: scale, child: child),
-            if (glitchOpacity > 0)
-              Positioned.fill(
-                child: Opacity(
-                  opacity: glitchOpacity.clamp(0.0, 0.45),
-                  child: Transform.translate(
-                    offset: Offset(3 * wave, -2),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(22),
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.cyanAccent.withValues(alpha: 0.35),
-                            Colors.pinkAccent.withValues(alpha: 0.25),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _HostHoloSurface extends StatelessWidget {
-  const _HostHoloSurface({required this.host, required this.preferRight});
-
-  final TwinHost host;
-  final bool preferRight;
+  final HostDeviceForm? formOverride;
+  final String? iconPath;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -1639,6 +1847,9 @@ class _HostHoloSurface extends StatelessWidget {
     final osLabel = host.osDisplay.isNotEmpty ? host.osDisplay : host.platform;
     final uptime = _formatDuration(host.uptime);
     final rack = host.rack ?? 'UNASSIGNED';
+    final deviceLabel = _formLabel(
+      formOverride ?? _resolveDeviceForm(host),
+    );
 
     final highlightBegin = preferRight ? Alignment.topLeft : Alignment.topRight;
     final highlightEnd = preferRight ? Alignment.bottomRight : Alignment.bottomLeft;
@@ -1697,6 +1908,12 @@ class _HostHoloSurface extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onEdit != null)
+                IconButton(
+                  tooltip: '장비 수정',
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit, size: 16),
+                ),
             ],
           ),
           const SizedBox(height: 4),
@@ -1720,6 +1937,11 @@ class _HostHoloSurface extends StatelessWidget {
             spacing: 10,
             runSpacing: 8,
             children: [
+              _HoloDatum(
+                icon: Icons.devices_other,
+                label: '타입',
+                value: deviceLabel,
+              ),
               _HoloDatum(
                 icon: Icons.memory,
                 label: 'CPU',
@@ -1768,6 +1990,12 @@ class _HostHoloSurface extends StatelessWidget {
                 label: 'NIC',
                 value: _formatInterfaceSummary(host.diagnostics.interfaces),
               ),
+              if (iconPath != null)
+                _HoloDatum(
+                  icon: Icons.image,
+                  label: '아이콘',
+                  value: iconPath!,
+                ),
               _HoloDatum(
                 icon: Icons.storage,
                 label: '스토리지',
@@ -1891,6 +2119,11 @@ class _TwinScenePainter extends CustomPainter {
     required this.cameraTo,
     required this.cameraAnimation,
     required this.linkPulse,
+    required this.projections,
+    required this.tierAssignments,
+    required this.focusedTier,
+    required this.layoutPositions,
+    required this.formOverrides,
     super.repaint,
   });
 
@@ -1902,6 +2135,11 @@ class _TwinScenePainter extends CustomPainter {
   final TwinPosition cameraTo;
   final Animation<double> cameraAnimation;
   final ValueListenable<double> linkPulse;
+  final Map<String, _ProjectedPoint> projections;
+  final Map<String, int> tierAssignments;
+  final int? focusedTier;
+  final Map<String, TwinPosition> layoutPositions;
+  final Map<String, HostDeviceForm> formOverrides;
 
   TwinPosition get _cameraFocus => TwinPosition.lerp(
     cameraFrom,
@@ -1983,21 +2221,26 @@ class _TwinScenePainter extends CustomPainter {
   ) {
     final layers = <int, List<TwinHost>>{};
     for (final host in frame.hosts) {
-      final layerIndex = _resolveNetworkTier(host);
+      final layerIndex =
+          tierAssignments[host.hostname] ?? _resolveNetworkTier(host);
       layers.putIfAbsent(layerIndex, () => []).add(host);
     }
     final keys = layers.keys.toList()..sort();
     for (final layer in keys) {
       final hosts = layers[layer]!;
-      double minX = hosts.first.position.x;
-      double maxX = hosts.first.position.x;
-      double minZ = hosts.first.position.z;
-      double maxZ = hosts.first.position.z;
+      double minX =
+          (layoutPositions[hosts.first.hostname] ?? hosts.first.position).x;
+      double maxX = minX;
+      double minZ =
+          (layoutPositions[hosts.first.hostname] ?? hosts.first.position).z;
+      double maxZ = minZ;
       for (final host in hosts) {
-        minX = math.min(minX, host.position.x);
-        maxX = math.max(maxX, host.position.x);
-        minZ = math.min(minZ, host.position.z);
-        maxZ = math.max(maxZ, host.position.z);
+        final viewPosition =
+            layoutPositions[host.hostname] ?? host.position;
+        minX = math.min(minX, viewPosition.x);
+        maxX = math.max(maxX, viewPosition.x);
+        minZ = math.min(minZ, viewPosition.z);
+        maxZ = math.max(maxZ, viewPosition.z);
       }
       const padding = 180.0;
       final altitude = layer * 140.0;
@@ -2020,8 +2263,10 @@ class _TwinScenePainter extends CustomPainter {
         center,
         scale,
       );
+      final highlighted = focusedTier == null || layer == focusedTier;
+      final alphaScale = highlighted ? 1.0 : 0.15;
       final sidePaint = Paint()
-        ..color = Colors.tealAccent.withValues(alpha: 0.06);
+        ..color = Colors.tealAccent.withValues(alpha: 0.06 * alphaScale);
       for (var i = 0; i < top.length; i++) {
         final next = (i + 1) % top.length;
         final face = Path()
@@ -2037,8 +2282,8 @@ class _TwinScenePainter extends CustomPainter {
           top[0],
           top[2],
           [
-            Colors.white.withValues(alpha: 0.08),
-            Colors.tealAccent.withValues(alpha: 0.05),
+            Colors.white.withValues(alpha: 0.08 * alphaScale),
+            Colors.tealAccent.withValues(alpha: 0.05 * alphaScale),
           ],
         );
       final topPath = Path()..addPolygon(top, true);
@@ -2088,25 +2333,17 @@ class _TwinScenePainter extends CustomPainter {
     double scale,
   ) {
     final hosts = {for (final host in frame.hosts) host.hostname: host};
-    final focus = _cameraFocus;
 
     for (final link in frame.links) {
       final source = hosts[link.source];
       final target = hosts[link.target];
       if (source == null || target == null) continue;
+      final sourceProjection = projections[source.hostname];
+      final targetProjection = projections[target.hostname];
+      if (sourceProjection == null || targetProjection == null) continue;
 
-      final sourcePoint = twinProjectPoint(
-        source.position,
-        center,
-        scale,
-        focus,
-      );
-      final targetPoint = twinProjectPoint(
-        target.position,
-        center,
-        scale,
-        focus,
-      );
+      final sourcePoint = sourceProjection.offset;
+      final targetPoint = targetProjection.offset;
 
       final controlPoint = Offset(
         (sourcePoint.dx + targetPoint.dx) / 2,
@@ -2146,7 +2383,8 @@ class _TwinScenePainter extends CustomPainter {
       }
 
       final slackPaint = Paint()
-        ..color = Colors.tealAccent.withValues(alpha: (1 - utilization) * 0.12)
+        ..color = Colors.tealAccent
+            .withValues(alpha: (1 - utilization) * 0.12)
         ..strokeWidth = 8
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round;
@@ -2160,10 +2398,15 @@ class _TwinScenePainter extends CustomPainter {
         ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 12);
       canvas.drawPath(path, baseGlow);
 
+      final highlight = focusedTier == null ||
+          focusedTier == tierAssignments[source.hostname] ||
+          focusedTier == tierAssignments[target.hostname];
+      final opacityScale = highlight ? 1.0 : 0.1;
+
       final paint = Paint()
         ..shader = ui.Gradient.linear(sourcePoint, targetPoint, [
-          color.withValues(alpha: 0.2),
-          color.withValues(alpha: 0.95),
+          color.withValues(alpha: 0.2 * opacityScale),
+          color.withValues(alpha: 0.95 * opacityScale),
         ])
         ..strokeWidth = 2 + utilization * 4 + pulse
         ..style = PaintingStyle.stroke
@@ -2267,19 +2510,17 @@ class _TwinScenePainter extends CustomPainter {
     Offset center,
     double scale,
   ) {
-    final focus = _cameraFocus;
-
     for (final host in frame.hosts) {
-      final projection = _projectPoint3d(
-        host.position,
-        center,
-        scale,
-        focus,
-      );
+      final projection = projections[host.hostname];
+      if (projection == null) continue;
       final basePosition = projection.offset;
       final status = host.status;
       final isCore = host.isCore;
       final isSelected = selectedHost != null && selectedHost == host.hostname;
+      final tier = tierAssignments[host.hostname];
+      final highlighted =
+          focusedTier == null || tier == focusedTier || isSelected;
+      final opacityScale = highlighted ? 1.0 : 0.2;
 
       Color color;
       if (mode == TwinViewportMode.heatmap) {
@@ -2307,13 +2548,16 @@ class _TwinScenePainter extends CustomPainter {
       }
 
       final radius = hostBubbleRadius(host);
-      final form = _resolveDeviceForm(host);
+      final form =
+          formOverrides[host.hostname] ?? _resolveDeviceForm(host);
       _drawDeviceForm(
         canvas: canvas,
         position: basePosition,
         radius: radius,
         height: 20.0 + projection.scaleFactor * 50,
-        color: color,
+        color: color.withValues(
+          alpha: (color.a * opacityScale).clamp(0.0, 1.0),
+        ),
         form: form,
         isSelected: isSelected,
       );
@@ -2863,6 +3107,21 @@ HostDeviceForm _resolveDeviceForm(TwinHost host) {
     return HostDeviceForm.client;
   }
   return HostDeviceForm.server;
+}
+
+String _formLabel(HostDeviceForm form) {
+  switch (form) {
+    case HostDeviceForm.server:
+      return '서버';
+    case HostDeviceForm.switcher:
+      return '스위치/공유기';
+    case HostDeviceForm.gateway:
+      return '게이트웨이/WAN';
+    case HostDeviceForm.sensor:
+      return '센서/엣지';
+    case HostDeviceForm.client:
+      return '클라이언트';
+  }
 }
 
 String? _formatHostMemorySubtitle(TwinHost host) {
@@ -4617,6 +4876,54 @@ class _WidgetPaletteButton extends StatelessWidget {
   }
 }
 
+class _TierButton extends StatelessWidget {
+  const _TierButton({
+    required this.focusedTier,
+    required this.tiers,
+    required this.onChanged,
+  });
+
+  final int? focusedTier;
+  final List<int> tiers;
+  final ValueChanged<int?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = focusedTier == null ? '전체 계층' : 'L$focusedTier';
+    return PopupMenuButton<int?>(
+      tooltip: '계층 선택',
+      onSelected: onChanged,
+      itemBuilder: (context) => [
+        const PopupMenuItem<int?>(
+          value: null,
+          child: Text('모든 계층'),
+        ),
+        ...tiers.map(
+          (tier) => PopupMenuItem<int?>(
+            value: tier,
+            child: Text('L$tier'),
+          ),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0x331B2333)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.filter_list, size: 16),
+            const SizedBox(width: 6),
+            Text(label),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _GridSpec {
   const _GridSpec({
     required this.cellSize,
@@ -4759,6 +5066,192 @@ class _DockDragPayload {
   final Set<SidebarWing> allowedWings;
   final int widthUnits;
   final int heightUnits;
+}
+
+class _TierManagerSheet extends StatelessWidget {
+  const _TierManagerSheet({
+    required this.frame,
+    required this.assignments,
+    required this.tiers,
+    required this.removableTiers,
+    required this.onAddTier,
+    required this.onRemoveTier,
+    required this.onAssignTier,
+  });
+
+  final TwinStateFrame frame;
+  final Map<String, int> assignments;
+  final List<int> tiers;
+  final Set<int> removableTiers;
+  final VoidCallback onAddTier;
+  final ValueChanged<int> onRemoveTier;
+  final void Function(String hostname, int tier) onAssignTier;
+
+  @override
+  Widget build(BuildContext context) {
+    final hosts = frame.hosts
+        .where((host) => !host.isCore)
+        .toList()
+      ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  '계층 관리',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: onAddTier,
+                  icon: const Icon(Icons.add),
+                  label: const Text('계층 추가'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: tiers
+                  .map(
+                    (tier) => Chip(
+                      label: Text('L$tier'),
+                      avatar: const Icon(Icons.layers_outlined, size: 16),
+                      onDeleted: removableTiers.contains(tier)
+                          ? () => onRemoveTier(tier)
+                          : null,
+                    ),
+                  )
+                  .toList(),
+            ),
+            const Divider(height: 24),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: hosts.length,
+                separatorBuilder: (_, __) => const Divider(height: 16),
+                itemBuilder: (context, index) {
+                  final host = hosts[index];
+                  final currentTier = assignments[host.hostname] ?? 0;
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              host.displayName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              host.hostname,
+                              style: const TextStyle(
+                                color: Colors.white38,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      DropdownButton<int>(
+                        value: currentTier,
+                        items: tiers
+                            .map(
+                              (tier) => DropdownMenuItem(
+                                value: tier,
+                                child: Text('L$tier'),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          onAssignTier(host.hostname, value);
+                        },
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeviceIconMarker extends StatelessWidget {
+  const _DeviceIconMarker({this.assetPath, required this.form});
+
+  final String? assetPath;
+  final HostDeviceForm form;
+
+  @override
+  Widget build(BuildContext context) {
+    const double size = 32;
+    Widget child;
+    if (assetPath != null && assetPath!.isNotEmpty) {
+      child = Image.asset(
+        assetPath!,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _buildFallback(size),
+      );
+    } else {
+      child = _buildFallback(size);
+    }
+    return child;
+  }
+
+  Widget _buildFallback(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0x3300C2FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x5500C2FF)),
+      ),
+      child: Icon(
+        _iconForForm(form),
+        size: size * 0.6,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  IconData _iconForForm(HostDeviceForm form) {
+    switch (form) {
+      case HostDeviceForm.server:
+        return Icons.dns;
+      case HostDeviceForm.switcher:
+        return Icons.device_hub;
+      case HostDeviceForm.gateway:
+        return Icons.settings_ethernet;
+      case HostDeviceForm.sensor:
+        return Icons.sensors;
+      case HostDeviceForm.client:
+        return Icons.computer;
+    }
+  }
 }
 
 class _DropIndicator {
