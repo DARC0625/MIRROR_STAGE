@@ -2,13 +2,17 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 import 'core/models/command_models.dart';
 import 'core/models/twin_models.dart';
 import 'core/services/command_service.dart';
 import 'core/services/twin_channel.dart';
+
+const double _cameraYaw = -0.45;
+const double _cameraPitch = 0.95;
+const double _cameraDistance = 2600.0;
 
 enum TwinViewportMode { topology, heatmap }
 
@@ -1916,25 +1920,57 @@ class _TwinScenePainter extends CustomPainter {
   }
 
   void _paintGrid(Canvas canvas, Size size) {
-    final picture = _GridPictureCache.instance.pictureFor(size);
-    canvas.drawPicture(picture);
+    final horizon = size.height * 0.35;
+    final skyRect = Rect.fromLTWH(0, 0, size.width, horizon);
+    final floorRect = Rect.fromLTWH(0, horizon, size.width, size.height - horizon);
 
-    final haloPaint = Paint()
-      ..shader =
-          const RadialGradient(
-            colors: [Color(0xFF0B2234), Colors.transparent],
-            radius: 0.8,
-          ).createShader(
-            Rect.fromCircle(
-              center: size.center(Offset.zero),
-              radius: size.shortestSide * 0.55,
-            ),
-          );
-    canvas.drawCircle(
-      size.center(Offset.zero),
-      size.shortestSide * 0.55,
-      haloPaint,
-    );
+    final skyPaint = Paint()
+      ..shader = const LinearGradient(
+        colors: [
+          Color(0xFF070E18),
+          Color(0xFF0A1524),
+        ],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ).createShader(skyRect);
+    canvas.drawRect(skyRect, skyPaint);
+
+    final floorPaint = Paint()
+      ..shader = const LinearGradient(
+        colors: [
+          Color(0xFF051627),
+          Color(0xFF041019),
+        ],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ).createShader(floorRect);
+    canvas.drawRect(floorRect, floorPaint);
+
+    final linePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.05)
+      ..strokeWidth = 1.0;
+    for (var i = 0; i < 14; i++) {
+      final t = i / 13;
+      final startX = ui.lerpDouble(-size.width * 0.3, size.width * 1.2, t)!;
+      final endX = ui.lerpDouble(size.width * 0.2, size.width * 0.8, t)!;
+      canvas.drawLine(
+        Offset(startX, size.height),
+        Offset(endX, horizon + 40),
+        linePaint,
+      );
+    }
+    final rows = 8;
+    for (var i = 0; i < rows; i++) {
+      final t = i / rows;
+      final y = ui.lerpDouble(size.height, horizon + 40, t)!;
+      final left = ui.lerpDouble(-size.width * 0.1, size.width * 0.2, t)!;
+      final right = ui.lerpDouble(size.width * 1.1, size.width * 0.8, t)!;
+      canvas.drawLine(
+        Offset(left, y),
+        Offset(right, y),
+        linePaint,
+      );
+    }
   }
 
   void _paintLayers(
@@ -1961,9 +1997,10 @@ class _TwinScenePainter extends CustomPainter {
         minZ = math.min(minZ, host.position.z);
         maxZ = math.max(maxZ, host.position.z);
       }
-      const padding = 140.0;
-      final altitude = layer * 90.0;
-      final path = _isoPlatePath(
+      const padding = 180.0;
+      final altitude = layer * 140.0;
+      final thickness = 90.0;
+      final top = _isoPlatePath(
         minX - padding,
         maxX + padding,
         minZ - padding,
@@ -1972,27 +2009,49 @@ class _TwinScenePainter extends CustomPainter {
         center,
         scale,
       );
-      final paint = Paint()
-        ..shader = ui.Gradient.radial(
-          size.center(Offset.zero),
-          size.shortestSide,
+      final bottom = _isoPlatePath(
+        minX - padding,
+        maxX + padding,
+        minZ - padding,
+        maxZ + padding,
+        altitude - thickness,
+        center,
+        scale,
+      );
+      final sidePaint = Paint()
+        ..color = Colors.tealAccent.withValues(alpha: 0.06);
+      for (var i = 0; i < top.length; i++) {
+        final next = (i + 1) % top.length;
+        final face = Path()
+          ..moveTo(top[i].dx, top[i].dy)
+          ..lineTo(top[next].dx, top[next].dy)
+          ..lineTo(bottom[next].dx, bottom[next].dy)
+          ..lineTo(bottom[i].dx, bottom[i].dy)
+          ..close();
+        canvas.drawPath(face, sidePaint);
+      }
+      final topPaint = Paint()
+        ..shader = ui.Gradient.linear(
+          top[0],
+          top[2],
           [
-            Colors.blueGrey.withValues(alpha: 0.04),
+            Colors.white.withValues(alpha: 0.08),
             Colors.tealAccent.withValues(alpha: 0.05),
           ],
         );
-      canvas.drawPath(path, paint);
+      final topPath = Path()..addPolygon(top, true);
+      canvas.drawPath(topPath, topPaint);
       canvas.drawPath(
-        path,
+        topPath,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.3
-          ..color = Colors.white.withValues(alpha: 0.08),
+          ..strokeWidth = 1.2
+          ..color = Colors.white.withValues(alpha: 0.12),
       );
     }
   }
 
-  Path _isoPlatePath(
+  List<Offset> _isoPlatePath(
     double minX,
     double maxX,
     double minZ,
@@ -2007,7 +2066,7 @@ class _TwinScenePainter extends CustomPainter {
       TwinPosition(x: maxX, y: altitude, z: maxZ),
       TwinPosition(x: minX, y: altitude, z: maxZ),
     ];
-    final points = corners
+    return corners
         .map(
           (position) => twinProjectPoint(
             position,
@@ -2017,15 +2076,9 @@ class _TwinScenePainter extends CustomPainter {
           ),
         )
         .toList(growable: false);
-    final path = Path()..moveTo(points.first.dx, points.first.dy);
-    for (var i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
-    }
-    path.close();
-    return path;
   }
 
-  int _layerIndex(double y) => (y / 140).round();
+  int _layerIndex(double y) => (y / 160).round();
 
   void _paintLinks(
     Canvas canvas,
@@ -2384,13 +2437,7 @@ Offset twinProjectPoint(
   double scale, [
   TwinPosition focus = TwinPosition.zero,
 ]) {
-  final adjusted = position.subtract(focus);
-  final isoX = (adjusted.x - adjusted.z) * 0.75;
-  final isoY = (adjusted.x + adjusted.z) * 0.35 - adjusted.y * 0.9;
-  return Offset(
-    center.dx + isoX * scale,
-    center.dy + isoY * scale,
-  );
+  return _projectPoint3d(position, center, scale, focus).offset;
 }
 
 Offset _quadraticPoint(Offset p0, Offset p1, Offset p2, double t) {
@@ -2448,53 +2495,35 @@ void _drawArrowHead(
   );
 }
 
-class _GridPictureCache {
-  _GridPictureCache._();
-  static final _GridPictureCache instance = _GridPictureCache._();
+class _ProjectedPoint {
+  const _ProjectedPoint(this.offset, this.depth, this.scaleFactor);
 
-  final Map<_GridCacheKey, ui.Picture> _cache = {};
-
-  ui.Picture pictureFor(Size size) {
-    final key = _GridCacheKey(size);
-    final cached = _cache[key];
-    if (cached != null) {
-      return cached;
-    }
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    final paint = Paint()
-      ..color = const Color(0xFF0E2032)
-      ..strokeWidth = 0.6;
-    const spacing = 36.0;
-    for (double x = 0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-    final picture = recorder.endRecording();
-    if (_cache.length > 6) {
-      _cache.remove(_cache.keys.first);
-    }
-    _cache[key] = picture;
-    return picture;
-  }
+  final Offset offset;
+  final double depth;
+  final double scaleFactor;
 }
 
-class _GridCacheKey {
-  _GridCacheKey(Size size)
-    : width = size.width.round(),
-      height = size.height.round();
+_ProjectedPoint _projectPoint3d(
+  TwinPosition position,
+  Offset center,
+  double scale,
+  TwinPosition focus,
+) {
+  final adjusted = position.subtract(focus);
+  final cosYaw = math.cos(_cameraYaw);
+  final sinYaw = math.sin(_cameraYaw);
+  final xYaw = adjusted.x * cosYaw - adjusted.z * sinYaw;
+  final zYaw = adjusted.x * sinYaw + adjusted.z * cosYaw;
 
-  final int width;
-  final int height;
+  final cosPitch = math.cos(_cameraPitch);
+  final sinPitch = math.sin(_cameraPitch);
+  final yPitch = adjusted.y * cosPitch - zYaw * sinPitch;
+  final depth = adjusted.y * sinPitch + zYaw * cosPitch;
 
-  @override
-  bool operator ==(Object other) =>
-      other is _GridCacheKey && width == other.width && height == other.height;
-
-  @override
-  int get hashCode => Object.hash(width, height);
+  final perspective = _cameraDistance / (_cameraDistance + depth + 1);
+  final screenX = center.dx + xYaw * scale * perspective;
+  final screenY = center.dy + yPitch * scale * perspective;
+  return _ProjectedPoint(Offset(screenX, screenY), depth, perspective);
 }
 
 String _formatBytes(double? bytes) {
