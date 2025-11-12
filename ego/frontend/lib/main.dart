@@ -13,6 +13,11 @@ import 'core/services/twin_channel.dart';
 
 const double _cameraYaw = -0.45;
 const double _cameraPitch = 0.95;
+const double _tierHostElevation = 85.0;
+const double _tierDepthSpacing = 220.0;
+const double _tierPlateSpacing = 80.0;
+const double _tierPlatePadding = 110.0;
+const List<int> _kDefaultOsiLayers = [1, 2, 3, 4, 5, 6, 7];
 const double _cameraDistance = 2600.0;
 
 enum TwinViewportMode { topology, heatmap }
@@ -271,10 +276,9 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     TwinStateFrame frame,
     Map<String, int> tierAssignments,
   ) {
-    const maxTierWidth = 720.0;
+    const maxTierWidth = 540.0;
     const minSpacing = 160.0;
-    const tierElevation = 140.0;
-    const depthSpacing = 320.0;
+    const depthSpacing = _tierDepthSpacing;
     final groups = <int, List<TwinHost>>{};
     for (final host in frame.hosts) {
       final tier = tierAssignments[host.hostname] ?? 0;
@@ -292,12 +296,13 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
           : math.min(maxTierWidth, span * minSpacing);
       final startX = hosts.length <= 1 ? 0.0 : -width / 2;
       final step = hosts.length <= 1 ? 0.0 : width / span;
+      final tierLevel = _tierLevel(tier);
       for (var i = 0; i < hosts.length; i++) {
         final offsetX = hosts.length <= 1 ? 0.0 : startX + i * step;
         overrides[hosts[i].hostname] = TwinPosition(
           x: offsetX,
-          y: tier * tierElevation,
-          z: tier * depthSpacing,
+          y: (tierLevel - 1) * _tierHostElevation,
+          z: (tierLevel - 1) * depthSpacing,
         );
       }
     }
@@ -2361,13 +2366,14 @@ class _TwinScenePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    _paintGrid(canvas, size);
-    _paintLayers(canvas, size, sceneCenter, sceneScale);
+    final bounds = _computeSceneBounds(layoutPositions, frame);
+    _paintGrid(canvas, size, bounds);
+    _paintLayers(canvas, bounds, sceneCenter, sceneScale);
     _paintLinks(canvas, size, sceneCenter, sceneScale);
     _paintHosts(canvas, size, sceneCenter, sceneScale);
   }
 
-  void _paintGrid(Canvas canvas, Size size) {
+  void _paintGrid(Canvas canvas, Size size, _SceneBounds bounds) {
     final horizon = size.height * 0.35;
     final skyRect = Rect.fromLTWH(0, 0, size.width, horizon);
     final floorRect = Rect.fromLTWH(
@@ -2393,95 +2399,129 @@ class _TwinScenePainter extends CustomPainter {
       ).createShader(floorRect);
     canvas.drawRect(floorRect, floorPaint);
 
-    final linePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.05)
-      ..strokeWidth = 1.0;
-    for (var i = 0; i < 14; i++) {
-      final t = i / 13;
-      final startX = ui.lerpDouble(-size.width * 0.3, size.width * 1.2, t)!;
-      final endX = ui.lerpDouble(size.width * 0.2, size.width * 0.8, t)!;
+    final plate = _isoPlatePath(
+      bounds.minX - _tierPlatePadding * 1.5,
+      bounds.maxX + _tierPlatePadding * 1.5,
+      bounds.minZ - _tierPlatePadding * 1.5,
+      bounds.maxZ + _tierPlatePadding * 1.5,
+      -_tierPlateSpacing * 0.6,
+      sceneCenter,
+      sceneScale,
+    );
+    final floorPath = Path()..addPolygon(plate, true);
+    canvas.drawPath(
+      floorPath,
+      Paint()
+        ..shader = ui.Gradient.linear(plate[0], plate[2], [
+          const Color(0xFF041019).withValues(alpha: 0.85),
+          const Color(0xFF071828).withValues(alpha: 0.9),
+        ]),
+    );
+
+    const gridLines = 10;
+    for (var i = 0; i <= gridLines; i++) {
+      final t = i / gridLines;
+      final x = ui.lerpDouble(bounds.minX, bounds.maxX, t)!;
+      final start = twinProjectPoint(
+        TwinPosition(
+          x: x,
+          y: -_tierPlateSpacing * 0.6,
+          z: bounds.minZ - _tierPlatePadding,
+        ),
+        sceneCenter,
+        sceneScale,
+        _cameraFocus,
+      );
+      final end = twinProjectPoint(
+        TwinPosition(
+          x: x,
+          y: -_tierPlateSpacing * 0.6,
+          z: bounds.maxZ + _tierPlatePadding,
+        ),
+        sceneCenter,
+        sceneScale,
+        _cameraFocus,
+      );
       canvas.drawLine(
-        Offset(startX, size.height),
-        Offset(endX, horizon + 40),
-        linePaint,
+        start,
+        end,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.03)
+          ..strokeWidth = 1.0,
       );
     }
-    final rows = 8;
-    for (var i = 0; i < rows; i++) {
-      final t = i / rows;
-      final y = ui.lerpDouble(size.height, horizon + 40, t)!;
-      final left = ui.lerpDouble(-size.width * 0.1, size.width * 0.2, t)!;
-      final right = ui.lerpDouble(size.width * 1.1, size.width * 0.8, t)!;
-      canvas.drawLine(Offset(left, y), Offset(right, y), linePaint);
+    for (var i = 0; i <= gridLines; i++) {
+      final t = i / gridLines;
+      final z = ui.lerpDouble(bounds.minZ, bounds.maxZ, t)!;
+      final start = twinProjectPoint(
+        TwinPosition(
+          x: bounds.minX - _tierPlatePadding,
+          y: -_tierPlateSpacing * 0.6,
+          z: z,
+        ),
+        sceneCenter,
+        sceneScale,
+        _cameraFocus,
+      );
+      final end = twinProjectPoint(
+        TwinPosition(
+          x: bounds.maxX + _tierPlatePadding,
+          y: -_tierPlateSpacing * 0.6,
+          z: z,
+        ),
+        sceneCenter,
+        sceneScale,
+        _cameraFocus,
+      );
+      canvas.drawLine(
+        start,
+        end,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.03)
+          ..strokeWidth = 1.0,
+      );
     }
   }
 
-  void _paintLayers(Canvas canvas, Size size, Offset center, double scale) {
-    final layers = <int, List<TwinHost>>{};
-    final allTiers = tierPalette.isEmpty ? {0, 1, 2, 3} : tierPalette;
-    for (final host in frame.hosts) {
-      final layerIndex =
-          tierAssignments[host.hostname] ?? _resolveNetworkTier(host);
-      layers.putIfAbsent(layerIndex, () => []).add(host);
-    }
-    for (final tier in allTiers) {
-      layers.putIfAbsent(tier, () => <TwinHost>[]);
-    }
-    final keys = layers.keys.toList()..sort();
-    for (final layer in keys) {
-      final hosts = layers[layer]!;
-      double minX, maxX, minZ, maxZ;
-      if (hosts.isEmpty) {
-        const fallback = 400.0;
-        minX = -fallback;
-        maxX = fallback;
-        minZ = -fallback;
-        maxZ = fallback;
-      } else {
-        minX =
-            (layoutPositions[hosts.first.hostname] ?? hosts.first.position).x;
-        maxX = minX;
-        minZ =
-            (layoutPositions[hosts.first.hostname] ?? hosts.first.position).z;
-        maxZ = minZ;
-        for (final host in hosts) {
-          final viewPosition = layoutPositions[host.hostname] ?? host.position;
-          minX = math.min(minX, viewPosition.x);
-          maxX = math.max(maxX, viewPosition.x);
-          minZ = math.min(minZ, viewPosition.z);
-          maxZ = math.max(maxZ, viewPosition.z);
-        }
-      }
-      const padding = 140.0;
-      final altitude = layer * 130.0 + 12;
-      final thickness = 80.0;
+  void _paintLayers(
+    Canvas canvas,
+    _SceneBounds bounds,
+    Offset center,
+    double scale,
+  ) {
+    final tiers = {..._kDefaultOsiLayers, ...tierPalette}.toList()..sort();
+    for (final layer in tiers) {
+      final altitude = (_tierLevel(layer) - 1) * _tierPlateSpacing;
+      final thickness = _tierPlateSpacing * 0.65;
       final top = _isoPlatePath(
-        minX - padding,
-        maxX + padding,
-        minZ - padding,
-        maxZ + padding,
+        bounds.minX - _tierPlatePadding,
+        bounds.maxX + _tierPlatePadding,
+        bounds.minZ - _tierPlatePadding,
+        bounds.maxZ + _tierPlatePadding,
         altitude,
         center,
         scale,
       );
       final bottom = _isoPlatePath(
-        minX - padding,
-        maxX + padding,
-        minZ - padding,
-        maxZ + padding,
+        bounds.minX - _tierPlatePadding,
+        bounds.maxX + _tierPlatePadding,
+        bounds.minZ - _tierPlatePadding,
+        bounds.maxZ + _tierPlatePadding,
         altitude - thickness,
         center,
         scale,
       );
       final highlighted = focusedTier == null || layer == focusedTier;
       final alphaScale = highlighted ? 1.0 : 0.25;
-      final glowPaint = Paint()
-        ..color = Colors.tealAccent.withValues(alpha: 0.08 * alphaScale)
-        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 18);
       final topPath = Path()..addPolygon(top, true);
-      canvas.drawPath(topPath, glowPaint);
+      canvas.drawPath(
+        topPath,
+        Paint()
+          ..color = Colors.tealAccent.withValues(alpha: 0.06 * alphaScale)
+          ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 14),
+      );
       final sidePaint = Paint()
-        ..color = Colors.tealAccent.withValues(alpha: 0.05 * alphaScale);
+        ..color = Colors.tealAccent.withValues(alpha: 0.04 * alphaScale);
       for (var i = 0; i < top.length; i++) {
         final next = (i + 1) % top.length;
         final face = Path()
@@ -2492,68 +2532,43 @@ class _TwinScenePainter extends CustomPainter {
           ..close();
         canvas.drawPath(face, sidePaint);
       }
-      final topPaint = Paint()
-        ..shader = ui.Gradient.linear(top[0], top[2], [
-          Colors.white.withValues(alpha: 0.1 * alphaScale),
-          Colors.tealAccent.withValues(alpha: 0.06 * alphaScale),
-        ]);
-      canvas.drawPath(topPath, topPaint);
+      canvas.drawPath(
+        topPath,
+        Paint()
+          ..shader = ui.Gradient.linear(top[0], top[2], [
+            Colors.white.withValues(alpha: 0.08 * alphaScale),
+            Colors.tealAccent.withValues(alpha: 0.05 * alphaScale),
+          ]),
+      );
       canvas.drawPath(
         topPath,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = highlighted ? 1.6 : 0.9
-          ..color = Colors.white.withValues(alpha: 0.22 * alphaScale),
+          ..strokeWidth = highlighted ? 1.4 : 0.8
+          ..color = Colors.white.withValues(alpha: 0.2 * alphaScale),
       );
       final centroidX =
           top.fold<double>(0, (sum, point) => sum + point.dx) / top.length;
       final centroidY =
           top.fold<double>(0, (sum, point) => sum + point.dy) / top.length;
-      final bottomCentroidX =
-          bottom.fold<double>(0, (sum, point) => sum + point.dx) / top.length;
-      final bottomCentroidY =
-          bottom.fold<double>(0, (sum, point) => sum + point.dy) / top.length;
-      final beaconPaint = Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(bottomCentroidX, bottomCentroidY),
-          Offset(centroidX, centroidY),
-          [
-            Colors.tealAccent.withValues(alpha: 0.0),
-            Colors.tealAccent.withValues(alpha: 0.22 * alphaScale),
-          ],
-        )
-        ..strokeWidth = highlighted ? 2.5 : 1.5
-        ..style = PaintingStyle.stroke;
-      canvas.drawLine(
-        Offset(bottomCentroidX, bottomCentroidY),
-        Offset(centroidX, centroidY),
-        beaconPaint,
-      );
-      canvas.drawCircle(
-        Offset(centroidX, centroidY),
-        highlighted ? 6 : 4,
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.7 * alphaScale)
-          ..style = PaintingStyle.fill,
-      );
       final labelPainter = TextPainter(
         textAlign: TextAlign.center,
         textDirection: TextDirection.ltr,
         text: TextSpan(
           text: 'L$layer',
           style: TextStyle(
-            color: Colors.white,
+            color: Colors.white.withValues(alpha: highlighted ? 1.0 : 0.6),
             fontWeight: FontWeight.w700,
-            fontSize: 12,
+            fontSize: 11,
             letterSpacing: 0.5,
           ),
         ),
       )..layout();
-      final labelWidth = labelPainter.width + 16;
-      final labelHeight = labelPainter.height + 8;
+      final labelWidth = labelPainter.width + 14;
+      final labelHeight = labelPainter.height + 6;
       final labelRect = RRect.fromRectAndRadius(
         Rect.fromCenter(
-          center: Offset(centroidX, centroidY - 22),
+          center: Offset(centroidX, centroidY - 18),
           width: labelWidth,
           height: labelHeight,
         ),
@@ -2562,20 +2577,20 @@ class _TwinScenePainter extends CustomPainter {
       canvas.drawRRect(
         labelRect,
         Paint()
-          ..color = Colors.black.withValues(alpha: 0.35 * alphaScale)
+          ..color = Colors.black.withValues(alpha: 0.32 * alphaScale)
           ..style = PaintingStyle.fill,
       );
       canvas.drawRRect(
         labelRect,
         Paint()
-          ..color = Colors.white.withValues(alpha: 0.5 * alphaScale)
+          ..color = Colors.white.withValues(alpha: 0.45 * alphaScale)
           ..style = PaintingStyle.stroke,
       );
       labelPainter.paint(
         canvas,
         Offset(
           centroidX - labelPainter.width / 2,
-          centroidY - 22 - labelPainter.height / 2,
+          centroidY - 18 - labelPainter.height / 2,
         ),
       );
     }
@@ -3157,6 +3172,55 @@ double hostBubbleRadius(TwinHost host) {
   }
   final cpuLoad = host.metrics.cpuLoad.clamp(0.0, 100.0);
   return 10.0 + cpuLoad * 0.06;
+}
+
+class _SceneBounds {
+  const _SceneBounds({
+    required this.minX,
+    required this.maxX,
+    required this.minZ,
+    required this.maxZ,
+  });
+
+  final double minX;
+  final double maxX;
+  final double minZ;
+  final double maxZ;
+
+  double get width => maxX - minX;
+  double get depth => maxZ - minZ;
+}
+
+int _tierLevel(int tier) {
+  final mapped = switch (tier) {
+    <= 0 => 3,
+    _ => tier,
+  };
+  return mapped.clamp(1, 7);
+}
+
+_SceneBounds _computeSceneBounds(
+  Map<String, TwinPosition> overrides,
+  TwinStateFrame frame,
+) {
+  double minX = double.infinity;
+  double maxX = double.negativeInfinity;
+  double minZ = double.infinity;
+  double maxZ = double.negativeInfinity;
+  for (final host in frame.hosts) {
+    final position = overrides[host.hostname] ?? host.position;
+    minX = math.min(minX, position.x);
+    maxX = math.max(maxX, position.x);
+    minZ = math.min(minZ, position.z);
+    maxZ = math.max(maxZ, position.z);
+  }
+  if (!minX.isFinite) {
+    minX = -400;
+    maxX = 400;
+    minZ = -400;
+    maxZ = 400;
+  }
+  return _SceneBounds(minX: minX, maxX: maxX, minZ: minZ, maxZ: maxZ);
 }
 
 void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
