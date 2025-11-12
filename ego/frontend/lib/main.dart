@@ -2452,9 +2452,9 @@ class _TwinScenePainter extends CustomPainter {
           maxZ = math.max(maxZ, viewPosition.z);
         }
       }
-      const padding = 240.0;
-      final altitude = layer * 140.0;
-      final thickness = 90.0;
+      const padding = 200.0;
+      final altitude = layer * 170.0 + 20;
+      final thickness = 110.0;
       final top = _isoPlatePath(
         minX - padding,
         maxX + padding,
@@ -2474,9 +2474,14 @@ class _TwinScenePainter extends CustomPainter {
         scale,
       );
       final highlighted = focusedTier == null || layer == focusedTier;
-      final alphaScale = highlighted ? 1.0 : 0.15;
+      final alphaScale = highlighted ? 1.0 : 0.2;
+      final glowPaint = Paint()
+        ..color = Colors.tealAccent.withValues(alpha: 0.12 * alphaScale)
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 24);
+      final topPath = Path()..addPolygon(top, true);
+      canvas.drawPath(topPath, glowPaint);
       final sidePaint = Paint()
-        ..color = Colors.tealAccent.withValues(alpha: 0.06 * alphaScale);
+        ..color = Colors.tealAccent.withValues(alpha: 0.08 * alphaScale);
       for (var i = 0; i < top.length; i++) {
         final next = (i + 1) % top.length;
         final face = Path()
@@ -2489,40 +2494,90 @@ class _TwinScenePainter extends CustomPainter {
       }
       final topPaint = Paint()
         ..shader = ui.Gradient.linear(top[0], top[2], [
-          Colors.white.withValues(alpha: 0.08 * alphaScale),
-          Colors.tealAccent.withValues(alpha: 0.05 * alphaScale),
+          Colors.white.withValues(alpha: 0.14 * alphaScale),
+          Colors.tealAccent.withValues(alpha: 0.09 * alphaScale),
         ]);
-      final topPath = Path()..addPolygon(top, true);
       canvas.drawPath(topPath, topPaint);
       canvas.drawPath(
         topPath,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2
-          ..color = Colors.white.withValues(alpha: 0.12),
+          ..strokeWidth = highlighted ? 2.0 : 1.0
+          ..color = Colors.white.withValues(alpha: 0.3 * alphaScale),
       );
       final centroidX =
           top.fold<double>(0, (sum, point) => sum + point.dx) / top.length;
       final centroidY =
           top.fold<double>(0, (sum, point) => sum + point.dy) / top.length;
+      final bottomCentroidX =
+          bottom.fold<double>(0, (sum, point) => sum + point.dx) / top.length;
+      final bottomCentroidY =
+          bottom.fold<double>(0, (sum, point) => sum + point.dy) / top.length;
+      final beaconPaint = Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(bottomCentroidX, bottomCentroidY),
+          Offset(centroidX, centroidY),
+          [
+            Colors.tealAccent.withValues(alpha: 0.0),
+            Colors.tealAccent.withValues(alpha: 0.35 * alphaScale),
+          ],
+        )
+        ..strokeWidth = highlighted ? 3 : 2
+        ..style = PaintingStyle.stroke;
+      canvas.drawLine(
+        Offset(bottomCentroidX, bottomCentroidY),
+        Offset(centroidX, centroidY),
+        beaconPaint,
+      );
+      canvas.drawCircle(
+        Offset(centroidX, centroidY),
+        highlighted ? 7 : 5,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.7 * alphaScale)
+          ..style = PaintingStyle.fill,
+      );
       final labelPainter = TextPainter(
         textAlign: TextAlign.center,
         textDirection: TextDirection.ltr,
         text: TextSpan(
           text: 'L$layer',
           style: TextStyle(
-            color: Colors.white.withValues(alpha: highlighted ? 0.85 : 0.35),
+            color: Colors.white,
             fontWeight: FontWeight.w700,
             fontSize: 12,
             letterSpacing: 0.5,
           ),
         ),
       )..layout();
-      final labelOffset = Offset(
-        centroidX - labelPainter.width / 2,
-        centroidY - labelPainter.height / 2,
+      final labelWidth = labelPainter.width + 20;
+      final labelHeight = labelPainter.height + 10;
+      final labelRect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(centroidX, centroidY - 26),
+          width: labelWidth,
+          height: labelHeight,
+        ),
+        const Radius.circular(12),
       );
-      labelPainter.paint(canvas, labelOffset);
+      canvas.drawRRect(
+        labelRect,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.45 * alphaScale)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawRRect(
+        labelRect,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.5 * alphaScale)
+          ..style = PaintingStyle.stroke,
+      );
+      labelPainter.paint(
+        canvas,
+        Offset(
+          centroidX - labelPainter.width / 2,
+          centroidY - 26 - labelPainter.height / 2,
+        ),
+      );
     }
   }
 
