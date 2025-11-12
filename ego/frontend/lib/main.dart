@@ -882,6 +882,8 @@ class _TwinViewport extends StatelessWidget {
                           layoutPositions: layoutPositions,
                           formOverrides: formOverrides,
                           tierPalette: tierPalette,
+                          sceneCenter: center,
+                          sceneScale: scale,
                         ),
                         child: const SizedBox.expand(),
                       ),
@@ -2327,6 +2329,8 @@ class _TwinScenePainter extends CustomPainter {
     required this.layoutPositions,
     required this.formOverrides,
     required this.tierPalette,
+    required this.sceneCenter,
+    required this.sceneScale,
     super.repaint,
   });
 
@@ -2344,6 +2348,8 @@ class _TwinScenePainter extends CustomPainter {
   final Map<String, TwinPosition> layoutPositions;
   final Map<String, HostDeviceForm> formOverrides;
   final Set<int> tierPalette;
+  final Offset sceneCenter;
+  final double sceneScale;
 
   TwinPosition get _cameraFocus => TwinPosition.lerp(
     cameraFrom,
@@ -2356,15 +2362,9 @@ class _TwinScenePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     _paintGrid(canvas, size);
-    final center = size.center(Offset.zero);
-    final scale = twinScaleFactor(
-      frame,
-      size,
-      layoutOverrides: layoutPositions,
-    );
-    _paintLayers(canvas, size, center, scale);
-    _paintLinks(canvas, size, center, scale);
-    _paintHosts(canvas, size, center, scale);
+    _paintLayers(canvas, size, sceneCenter, sceneScale);
+    _paintLinks(canvas, size, sceneCenter, sceneScale);
+    _paintHosts(canvas, size, sceneCenter, sceneScale);
   }
 
   void _paintGrid(Canvas canvas, Size size) {
@@ -2452,9 +2452,9 @@ class _TwinScenePainter extends CustomPainter {
           maxZ = math.max(maxZ, viewPosition.z);
         }
       }
-      const padding = 200.0;
-      final altitude = layer * 170.0 + 20;
-      final thickness = 110.0;
+      const padding = 140.0;
+      final altitude = layer * 130.0 + 12;
+      final thickness = 80.0;
       final top = _isoPlatePath(
         minX - padding,
         maxX + padding,
@@ -2474,14 +2474,14 @@ class _TwinScenePainter extends CustomPainter {
         scale,
       );
       final highlighted = focusedTier == null || layer == focusedTier;
-      final alphaScale = highlighted ? 1.0 : 0.2;
+      final alphaScale = highlighted ? 1.0 : 0.25;
       final glowPaint = Paint()
-        ..color = Colors.tealAccent.withValues(alpha: 0.12 * alphaScale)
-        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 24);
+        ..color = Colors.tealAccent.withValues(alpha: 0.08 * alphaScale)
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 18);
       final topPath = Path()..addPolygon(top, true);
       canvas.drawPath(topPath, glowPaint);
       final sidePaint = Paint()
-        ..color = Colors.tealAccent.withValues(alpha: 0.08 * alphaScale);
+        ..color = Colors.tealAccent.withValues(alpha: 0.05 * alphaScale);
       for (var i = 0; i < top.length; i++) {
         final next = (i + 1) % top.length;
         final face = Path()
@@ -2494,16 +2494,16 @@ class _TwinScenePainter extends CustomPainter {
       }
       final topPaint = Paint()
         ..shader = ui.Gradient.linear(top[0], top[2], [
-          Colors.white.withValues(alpha: 0.14 * alphaScale),
-          Colors.tealAccent.withValues(alpha: 0.09 * alphaScale),
+          Colors.white.withValues(alpha: 0.1 * alphaScale),
+          Colors.tealAccent.withValues(alpha: 0.06 * alphaScale),
         ]);
       canvas.drawPath(topPath, topPaint);
       canvas.drawPath(
         topPath,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = highlighted ? 2.0 : 1.0
-          ..color = Colors.white.withValues(alpha: 0.3 * alphaScale),
+          ..strokeWidth = highlighted ? 1.6 : 0.9
+          ..color = Colors.white.withValues(alpha: 0.22 * alphaScale),
       );
       final centroidX =
           top.fold<double>(0, (sum, point) => sum + point.dx) / top.length;
@@ -2519,10 +2519,10 @@ class _TwinScenePainter extends CustomPainter {
           Offset(centroidX, centroidY),
           [
             Colors.tealAccent.withValues(alpha: 0.0),
-            Colors.tealAccent.withValues(alpha: 0.35 * alphaScale),
+            Colors.tealAccent.withValues(alpha: 0.22 * alphaScale),
           ],
         )
-        ..strokeWidth = highlighted ? 3 : 2
+        ..strokeWidth = highlighted ? 2.5 : 1.5
         ..style = PaintingStyle.stroke;
       canvas.drawLine(
         Offset(bottomCentroidX, bottomCentroidY),
@@ -2531,7 +2531,7 @@ class _TwinScenePainter extends CustomPainter {
       );
       canvas.drawCircle(
         Offset(centroidX, centroidY),
-        highlighted ? 7 : 5,
+        highlighted ? 6 : 4,
         Paint()
           ..color = Colors.white.withValues(alpha: 0.7 * alphaScale)
           ..style = PaintingStyle.fill,
@@ -2549,11 +2549,11 @@ class _TwinScenePainter extends CustomPainter {
           ),
         ),
       )..layout();
-      final labelWidth = labelPainter.width + 20;
-      final labelHeight = labelPainter.height + 10;
+      final labelWidth = labelPainter.width + 16;
+      final labelHeight = labelPainter.height + 8;
       final labelRect = RRect.fromRectAndRadius(
         Rect.fromCenter(
-          center: Offset(centroidX, centroidY - 26),
+          center: Offset(centroidX, centroidY - 22),
           width: labelWidth,
           height: labelHeight,
         ),
@@ -2562,7 +2562,7 @@ class _TwinScenePainter extends CustomPainter {
       canvas.drawRRect(
         labelRect,
         Paint()
-          ..color = Colors.black.withValues(alpha: 0.45 * alphaScale)
+          ..color = Colors.black.withValues(alpha: 0.35 * alphaScale)
           ..style = PaintingStyle.fill,
       );
       canvas.drawRRect(
@@ -2575,7 +2575,7 @@ class _TwinScenePainter extends CustomPainter {
         canvas,
         Offset(
           centroidX - labelPainter.width / 2,
-          centroidY - 26 - labelPainter.height / 2,
+          centroidY - 22 - labelPainter.height / 2,
         ),
       );
     }
