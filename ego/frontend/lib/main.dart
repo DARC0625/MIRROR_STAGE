@@ -91,7 +91,6 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
   int? _focusedTier;
   final Map<String, int> _tierOverrides = {};
   final Set<int> _customTiers = {};
-  int _nextCustomTier = 4;
   final Map<String, HostDeviceForm> _formOverrides = {};
   final Map<String, String> _iconOverrides = {};
 
@@ -301,8 +300,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     TwinStateFrame frame,
     Map<String, int> assignments,
   ) {
-    final removable = {..._customTiers}
-      ..removeWhere((tier) => assignments.values.contains(tier));
+    final removable = _removableTiers(assignments);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -318,8 +316,8 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
             ..sort(),
           onAddTier: () {
             setState(() {
-              _customTiers.add(_nextCustomTier);
-              _nextCustomTier += 1;
+              final nextTier = _nextAvailableTier(assignments);
+              _customTiers.add(nextTier);
             });
           },
           onRemoveTier: (tier) {
@@ -357,6 +355,30 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
         _iconOverrides[hostname] = trimmed;
       }
     });
+  }
+
+  /// Returns which custom tiers are safe to delete (not currently assigned).
+  Set<int> _removableTiers(Map<String, int> assignments) => {
+        ..._customTiers,
+      }..removeWhere((tier) => assignments.values.contains(tier));
+
+  /// Picks the next tier number that is not already used by built-in layers,
+  /// user-defined tiers, or overrides. Ensures numbering stays compact.
+  int _nextAvailableTier(Map<String, int> assignments) {
+    final used = <int>{
+      0,
+      1,
+      2,
+      3,
+      ..._customTiers,
+      ...assignments.values,
+      ..._tierOverrides.values,
+    };
+    var candidate = 4;
+    while (used.contains(candidate)) {
+      candidate++;
+    }
+    return candidate;
   }
 }
 
