@@ -453,10 +453,15 @@ class _TwinViewport extends StatelessWidget {
           if (selectedHostModel != null) {
             final anchor = hostPositions[selectedHostModel];
             if (anchor != null) {
-              const cardSize = Size(240, 160);
-              final clampedLeft = (anchor.dx - cardSize.width / 2)
+              const cardSize = Size(280, 176);
+              final showRight = anchor.dx < size.width * 0.5;
+              final horizontalOffset = 32.0;
+              final desiredLeft = showRight
+                  ? anchor.dx + horizontalOffset
+                  : anchor.dx - cardSize.width - horizontalOffset;
+              final clampedLeft = desiredLeft
                   .clamp(8.0, size.width - cardSize.width - 8.0);
-              final clampedTop = (anchor.dy - cardSize.height - 28)
+              final clampedTop = (anchor.dy - cardSize.height * 0.55)
                   .clamp(8.0, size.height - cardSize.height - 8.0);
               holoCard = Positioned(
                 left: clampedLeft,
@@ -464,7 +469,11 @@ class _TwinViewport extends StatelessWidget {
                 width: cardSize.width,
                 child: IgnorePointer(
                   ignoring: true,
-                  child: _HostHoloCard(host: selectedHostModel),
+                  child: _HostHoloCard(
+                    host: selectedHostModel,
+                    anchor: anchor,
+                    preferRight: showRight,
+                  ),
                 ),
               );
             }
@@ -1509,9 +1518,15 @@ class _HostChip extends StatelessWidget {
 }
 
 class _HostHoloCard extends StatefulWidget {
-  const _HostHoloCard({required this.host});
+  const _HostHoloCard({
+    required this.host,
+    required this.preferRight,
+    required this.anchor,
+  });
 
   final TwinHost host;
+  final bool preferRight;
+  final Offset anchor;
 
   @override
   State<_HostHoloCard> createState() => _HostHoloCardState();
@@ -1540,7 +1555,10 @@ class _HostHoloCardState extends State<_HostHoloCard>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _controller,
-      child: _HostHoloSurface(host: widget.host),
+      child: _HostHoloSurface(
+        host: widget.host,
+        preferRight: widget.preferRight,
+      ),
       builder: (context, child) {
         final phase = _controller.value;
         final wave = math.sin(phase * math.pi * 2);
@@ -1599,15 +1617,13 @@ class _HostHoloCardState extends State<_HostHoloCard>
 }
 
 class _HostHoloSurface extends StatelessWidget {
-  const _HostHoloSurface({required this.host});
+  const _HostHoloSurface({required this.host, required this.preferRight});
 
   final TwinHost host;
+  final bool preferRight;
 
   @override
   Widget build(BuildContext context) {
-    final cpuUsage = host.metrics.cpuLoad.clamp(0, 100).toDouble();
-    final memUsage =
-        host.metrics.memoryUsedPercent.clamp(0, 100).toDouble();
     final statusColor = switch (host.status) {
       TwinHostStatus.online => Colors.tealAccent,
       TwinHostStatus.stale => Colors.amberAccent,
@@ -1622,10 +1638,21 @@ class _HostHoloSurface extends StatelessWidget {
     final uptime = _formatDuration(host.uptime);
     final rack = host.rack ?? 'UNASSIGNED';
 
+    final highlightBegin = preferRight ? Alignment.topLeft : Alignment.topRight;
+    final highlightEnd = preferRight ? Alignment.bottomRight : Alignment.bottomLeft;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xF006101C),
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withValues(alpha: 0.04),
+            Colors.transparent,
+          ],
+          begin: highlightBegin,
+          end: highlightEnd,
+        ),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.tealAccent.withValues(alpha: 0.45)),
         boxShadow: [
@@ -1678,28 +1705,53 @@ class _HostHoloSurface extends StatelessWidget {
             style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
           const SizedBox(height: 12),
-          Row(
+          Text(
+            'HARDWARE',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.6),
+              fontSize: 11,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
             children: [
-              Expanded(
-                child: _HoloProgressTile(
-                  label: 'CPU',
-                  value: '${cpuUsage.toStringAsFixed(1)}%',
-                  percent: cpuUsage / 100,
-                  accent: Colors.tealAccent,
-                ),
+              _HoloDatum(
+                icon: Icons.memory,
+                label: 'CPU',
+                value: host.cpuSummary,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _HoloProgressTile(
-                  label: 'MEM',
-                  value: '${memUsage.toStringAsFixed(1)}%',
-                  percent: memUsage / 100,
-                  accent: Colors.pinkAccent,
-                ),
+              _HoloDatum(
+                icon: Icons.toc,
+                label: '코어',
+                value: '${host.hardware.cpuPhysicalCores ?? '-'}P / ${host.hardware.cpuLogicalCores ?? '-'}T',
+              ),
+              _HoloDatum(
+                icon: Icons.sd_storage,
+                label: '메모리',
+                value: _formatCapacity(host.memoryTotalBytes),
+              ),
+              _HoloDatum(
+                icon: Icons.computer,
+                label: 'GPU',
+                value: host.diagnostics.tags['gpuModel'] ??
+                    host.diagnostics.tags['gpu'] ??
+                    '정보 없음',
               ),
             ],
           ),
           const SizedBox(height: 12),
+          Text(
+            'INFRASTRUCTURE',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.6),
+              fontSize: 11,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 6),
           Wrap(
             spacing: 10,
             runSpacing: 8,
@@ -1708,6 +1760,16 @@ class _HostHoloSurface extends StatelessWidget {
                 icon: Icons.public,
                 label: 'IP',
                 value: host.ip,
+              ),
+              _HoloDatum(
+                icon: Icons.router,
+                label: 'NIC',
+                value: _formatInterfaceSummary(host.diagnostics.interfaces),
+              ),
+              _HoloDatum(
+                icon: Icons.storage,
+                label: '스토리지',
+                value: _summarizeDisks(host.diagnostics.disks),
               ),
               _HoloDatum(
                 icon: Icons.access_time,
@@ -1720,11 +1782,6 @@ class _HostHoloSurface extends StatelessWidget {
                 value: host.agentVersion,
               ),
               _HoloDatum(
-                icon: Icons.memory,
-                label: 'CPU',
-                value: host.cpuSummary,
-              ),
-              _HoloDatum(
                 icon: Icons.hub,
                 label: 'Rack',
                 value: rack,
@@ -1733,59 +1790,6 @@ class _HostHoloSurface extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _HoloProgressTile extends StatelessWidget {
-  const _HoloProgressTile({
-    required this.label,
-    required this.value,
-    required this.percent,
-    required this.accent,
-  });
-
-  final String label;
-  final String value;
-  final double percent;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white60,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: LinearProgressIndicator(
-            value: percent.clamp(0.0, 1.0),
-            minHeight: 6,
-            backgroundColor: const Color(0xFF071021),
-            valueColor: AlwaysStoppedAnimation<Color>(accent),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1908,8 +1912,11 @@ class _TwinScenePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     _paintGrid(canvas, size);
-    _paintLinks(canvas, size);
-    _paintHosts(canvas, size);
+    final center = size.center(Offset.zero);
+    final scale = twinScaleFactor(frame, size);
+    _paintLayers(canvas, size, center, scale);
+    _paintLinks(canvas, size, center, scale);
+    _paintHosts(canvas, size, center, scale);
   }
 
   void _paintGrid(Canvas canvas, Size size) {
@@ -1934,9 +1941,71 @@ class _TwinScenePainter extends CustomPainter {
     );
   }
 
-  void _paintLinks(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final scale = twinScaleFactor(frame, size);
+  void _paintLayers(
+    Canvas canvas,
+    Size size,
+    Offset center,
+    double scale,
+  ) {
+    final layers = <int, List<Offset>>{};
+    for (final host in frame.hosts) {
+      final layerIndex = _layerIndex(host.position.y);
+      final point = twinProjectPoint(
+        host.position,
+        center,
+        scale,
+        _cameraFocus,
+      );
+      layers.putIfAbsent(layerIndex, () => []).add(point);
+    }
+    final keys = layers.keys.toList()..sort();
+    for (final layer in keys) {
+      final points = layers[layer]!;
+      double minX = points.first.dx;
+      double maxX = points.first.dx;
+      double minY = points.first.dy;
+      double maxY = points.first.dy;
+      for (final point in points) {
+        minX = math.min(minX, point.dx);
+        maxX = math.max(maxX, point.dx);
+        minY = math.min(minY, point.dy);
+        maxY = math.max(maxY, point.dy);
+      }
+      final depth = layer * 14.0;
+      final rect = Rect.fromLTRB(
+        (minX - 120).clamp(0.0, size.width),
+        (minY - 60 + depth).clamp(0.0, size.height),
+        (maxX + 120).clamp(0.0, size.width),
+        (maxY + 80 + depth).clamp(0.0, size.height),
+      );
+      final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(160));
+      final paint = Paint()
+        ..shader = ui.Gradient.linear(
+          rect.topLeft,
+          rect.bottomRight,
+          [
+            Colors.tealAccent.withValues(alpha: 0.05),
+            Colors.blueGrey.withValues(alpha: 0.02),
+          ],
+        );
+      canvas.drawRRect(rrect, paint);
+      canvas.drawRRect(
+        rrect.deflate(1.5),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = Colors.white.withValues(alpha: 0.04),
+      );
+    }
+  }
+
+  int _layerIndex(double y) => (y / 160).round();
+
+  void _paintLinks(
+    Canvas canvas,
+    Size size,
+    Offset center,
+    double scale,
+  ) {
     final hosts = {for (final host in frame.hosts) host.hostname: host};
     final focus = _cameraFocus;
 
@@ -2111,9 +2180,12 @@ class _TwinScenePainter extends CustomPainter {
     }
   }
 
-  void _paintHosts(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final scale = twinScaleFactor(frame, size);
+  void _paintHosts(
+    Canvas canvas,
+    Size size,
+    Offset center,
+    double scale,
+  ) {
     final focus = _cameraFocus;
 
     for (final host in frame.hosts) {
@@ -2153,49 +2225,52 @@ class _TwinScenePainter extends CustomPainter {
       }
 
       final radius = hostBubbleRadius(host);
+      final pinHeight = radius * 1.4;
 
-      final glowPaint = Paint()
-        ..color = color.withValues(alpha: isSelected ? 0.45 : 0.25)
-        ..style = PaintingStyle.fill
-        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 18);
-      canvas.drawCircle(position, radius + (isSelected ? 16 : 12), glowPaint);
+      final pinPaint = Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(position.dx, position.dy - pinHeight),
+          Offset(position.dx, position.dy + pinHeight),
+          [
+            Colors.white.withValues(alpha: 0.0),
+            color.withValues(alpha: 0.45),
+          ],
+        )
+        ..strokeWidth = isSelected ? 2.6 : 1.6
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(
+        Offset(position.dx, position.dy - pinHeight),
+        Offset(position.dx, position.dy + pinHeight * 0.8),
+        pinPaint,
+      );
 
-      final nodePaint = Paint()
-        ..shader = ui.Gradient.radial(position, radius + 4, [
-          Colors.white.withValues(alpha: 0.9),
-          color.withValues(alpha: isCore ? 0.95 : 0.7),
-        ])
+      final diamond = Path()
+        ..moveTo(position.dx, position.dy - radius)
+        ..lineTo(position.dx + radius, position.dy)
+        ..lineTo(position.dx, position.dy + radius * 1.4)
+        ..lineTo(position.dx - radius, position.dy)
+        ..close();
+      final diamondPaint = Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(position.dx, position.dy - radius),
+          Offset(position.dx, position.dy + radius * 1.4),
+          [
+            Colors.white.withValues(alpha: 0.9),
+            color.withValues(alpha: isCore ? 0.95 : 0.7),
+          ],
+        )
         ..style = PaintingStyle.fill;
-      canvas.drawCircle(position, radius, nodePaint);
+      canvas.drawPath(diamond, diamondPaint);
 
       if (isSelected) {
-        canvas.drawCircle(
-          position,
-          radius + 10,
+        canvas.drawPath(
+          diamond,
           Paint()
-            ..color = Colors.white.withValues(alpha: 0.4)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.2,
-        );
-      } else if (!isCore) {
-        canvas.drawCircle(
-          position,
-          radius + 6,
-          Paint()
-            ..color = color.withValues(alpha: 0.18)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2,
+            ..strokeWidth = 2
+            ..color = Colors.white.withValues(alpha: 0.6),
         );
       }
-
-      canvas.drawCircle(
-        position,
-        radius * 0.55,
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.4)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2,
-      );
 
       if (host.isDummy && !isCore) {
         final markerPath = Path()
@@ -2420,6 +2495,45 @@ String _formatDuration(Duration duration) {
     parts.add('${seconds}s');
   }
   return parts.join(' ');
+}
+
+String _formatCapacity(double? bytes) {
+  if (bytes == null || bytes <= 0) return '정보 없음';
+  const giga = 1024 * 1024 * 1024;
+  final gb = bytes / giga;
+  final decimals = gb >= 100 ? 0 : 1;
+  return '${gb.toStringAsFixed(decimals)} GB';
+}
+
+String _summarizeDisks(List<TwinDiskUsage> disks) {
+  if (disks.isEmpty) {
+    return '데이터 없음';
+  }
+  double totalBytes = 0;
+  for (final disk in disks) {
+    if (disk.totalBytes != null) {
+      totalBytes += disk.totalBytes!;
+    }
+  }
+  if (disks.length == 1) {
+    final disk = disks.first;
+    return '${disk.mountpoint} · ${_formatCapacity(disk.totalBytes)}';
+  }
+  final capacity = totalBytes > 0 ? _formatCapacity(totalBytes) : '용량 미상';
+  return '${disks.length} vols · $capacity';
+}
+
+String _formatInterfaceSummary(List<TwinInterfaceStats> interfaces) {
+  if (interfaces.isEmpty) return '데이터 없음';
+  TwinInterfaceStats? primary;
+  for (final iface in interfaces) {
+    if (iface.isUp != false) {
+      primary = iface;
+      break;
+    }
+  }
+  primary ??= interfaces.first;
+  return '${primary.name} · ${_formatInterfaceSpeed(primary)}';
 }
 
 String _formatThroughputLabel(double valueGbps) {
