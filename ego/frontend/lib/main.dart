@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'core/models/command_models.dart';
 import 'core/models/twin_models.dart';
@@ -403,7 +404,7 @@ class _TwinViewport extends StatelessWidget {
   final TwinPosition cameraFrom;
   final TwinPosition cameraTo;
   final Animation<double> cameraAnimation;
-  final Animation<double> linkPulse;
+  final ValueListenable<double> linkPulse;
   final Listenable repaint;
 
   TwinPosition get _cameraFocus => TwinPosition.lerp(
@@ -439,17 +440,17 @@ class _TwinViewport extends StatelessWidget {
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapDown: (details) {
-              final tap = details.localPosition;
-              TwinHost? nearest;
-              double minDistance = double.infinity;
-              final focus = _cameraFocus;
-              for (final host in frame.hosts) {
-                final point = twinProjectPoint(
-                  host.position,
-                  center,
-                  scale,
-                  focus,
-                );
+                  final tap = details.localPosition;
+                  TwinHost? nearest;
+                  double minDistance = double.infinity;
+                  final focus = _cameraFocus;
+                  for (final host in frame.hosts) {
+                    final point = twinProjectPoint(
+                      host.position,
+                      center,
+                      scale,
+                      focus,
+                    );
                     final radius = hostBubbleRadius(host);
                     final distance = (tap - point).distance;
                     if (distance <= radius + 14 && distance < minDistance) {
@@ -460,29 +461,29 @@ class _TwinViewport extends StatelessWidget {
                   if (nearest != null) {
                     onSelectHost(nearest.hostname);
                   } else {
-                onClearSelection();
-              }
-            },
-            child: RepaintBoundary(
-              child: CustomPaint(
-                isComplex: true,
-                willChange: true,
-                painter: _TwinScenePainter(
-                  frame,
-                  mode: mode,
-                  selectedHost: selectedHost,
-                  heatMax: heatMax,
-                  cameraFrom: cameraFrom,
-                  cameraTo: cameraTo,
-                  cameraAnimation: cameraAnimation,
-                  linkPulseAnimation: linkPulse,
-                  repaint: repaint,
+                    onClearSelection();
+                  }
+                },
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    isComplex: true,
+                    willChange: true,
+                    painter: _TwinScenePainter(
+                      frame,
+                      mode: mode,
+                      selectedHost: selectedHost,
+                      heatMax: heatMax,
+                      cameraFrom: cameraFrom,
+                      cameraTo: cameraTo,
+                      cameraAnimation: cameraAnimation,
+                      linkPulse: linkPulse,
+                      repaint: repaint,
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
                 ),
-                child: const SizedBox.expand(),
-              ),
-            ),
-          );
-        },
+              );
+            },
           ),
         ),
       ),
@@ -513,9 +514,10 @@ class _TwinStage extends StatefulWidget {
 
 class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
   late final AnimationController _cameraController;
-  late final AnimationController _linkPulseController;
-  late final Animation<double> _linkPulseAnimation;
+  late final ValueNotifier<double> _linkPulseValue;
   late final Listenable _stageTicker;
+  Timer? _linkPulseTimer;
+  double _linkPhase = 0;
   TwinPosition _cameraFrom = TwinPosition.zero;
   TwinPosition _cameraTo = TwinPosition.zero;
 
@@ -529,15 +531,16 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
     _cameraTo = widget.selectedHost?.position ?? TwinPosition.zero;
     _cameraFrom = _cameraTo;
 
-    _linkPulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..repeat(reverse: true);
-    _linkPulseAnimation = CurvedAnimation(
-      parent: _linkPulseController,
-      curve: Curves.easeInOutSine,
-    );
-    _stageTicker = Listenable.merge([_cameraController, _linkPulseController]);
+    _linkPulseValue = ValueNotifier<double>(0);
+    _linkPulseTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
+      _linkPhase += 0.045;
+      if (_linkPhase > 1) {
+        _linkPhase -= 1;
+      }
+      final eased = 0.5 - 0.5 * math.cos(_linkPhase * math.pi * 2);
+      _linkPulseValue.value = eased;
+    });
+    _stageTicker = Listenable.merge([_cameraController, _linkPulseValue]);
   }
 
   @override
@@ -555,7 +558,8 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _cameraController.dispose();
-    _linkPulseController.dispose();
+    _linkPulseTimer?.cancel();
+    _linkPulseValue.dispose();
     super.dispose();
   }
 
@@ -606,7 +610,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
                 cameraFrom: _cameraFrom,
                 cameraTo: _cameraTo,
                 cameraAnimation: _cameraController,
-                linkPulse: _linkPulseAnimation,
+                linkPulse: _linkPulseValue,
                 repaint: _stageTicker,
               ),
             ),
@@ -1514,7 +1518,7 @@ class _TwinScenePainter extends CustomPainter {
     required this.cameraFrom,
     required this.cameraTo,
     required this.cameraAnimation,
-    required this.linkPulseAnimation,
+    required this.linkPulse,
     super.repaint,
   });
 
@@ -1525,7 +1529,7 @@ class _TwinScenePainter extends CustomPainter {
   final TwinPosition cameraFrom;
   final TwinPosition cameraTo;
   final Animation<double> cameraAnimation;
-  final Animation<double> linkPulseAnimation;
+  final ValueListenable<double> linkPulse;
 
   TwinPosition get _cameraFocus => TwinPosition.lerp(
     cameraFrom,
@@ -1533,7 +1537,7 @@ class _TwinScenePainter extends CustomPainter {
     Curves.easeOutCubic.transform(cameraAnimation.value),
   );
 
-  double get _linkPulse => linkPulseAnimation.value;
+  double get _linkPulse => linkPulse.value;
 
   @override
   void paint(Canvas canvas, Size size) {
