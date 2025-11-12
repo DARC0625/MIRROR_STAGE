@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'core/models/command_models.dart';
@@ -172,13 +173,14 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                       onSelectHost: _selectHost,
                       onClearSelection: _clearSelection,
                       tierAssignments: tierAssignments,
-                      layoutPositions: layoutOverrides,
-                      focusedTier: _focusedTier,
-                      iconOverrides: _iconOverrides,
-                      formOverrides: _formOverrides,
-                      onClearTierFocus: () => _setTierFocus(null),
-                      onEditDevice: _handleDeviceEdit,
-                    );
+                    layoutPositions: layoutOverrides,
+                    focusedTier: _focusedTier,
+                    iconOverrides: _iconOverrides,
+                    formOverrides: _formOverrides,
+                    onClearTierFocus: () => _setTierFocus(null),
+                    onEditDevice: _handleDeviceEdit,
+                    tierPalette: tierOptions.toSet(),
+                  );
                     final leftPanel = _Sidebar(
                       frame: frame,
                       selectedHost: selectedHost,
@@ -300,42 +302,139 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     TwinStateFrame frame,
     Map<String, int> assignments,
   ) {
-    final removable = _removableTiers(assignments);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF05080D),
       builder: (context) {
-        return _TierManagerSheet(
-          frame: frame,
-          assignments: assignments,
-          tiers: {
-            ...assignments.values,
-            ..._customTiers,
-          }.toList()
-            ..sort(),
-          onAddTier: () {
-            setState(() {
-              final nextTier = _nextAvailableTier(assignments);
-              _customTiers.add(nextTier);
-            });
+        return StatefulBuilder(
+          builder: (context, modalSetState) {
+            final tierList = _availableTiers(assignments);
+            final removable = _removableTiers(assignments);
+            final hosts = frame.hosts
+                .where((host) => !host.isCore)
+                .toList()
+              ..sort((a, b) => a.displayName.compareTo(b.displayName));
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 24,
+                  right: 24,
+                  top: 24,
+                  bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          '계층 관리',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              final nextTier = _nextAvailableTier(assignments);
+                              _customTiers.add(nextTier);
+                            });
+                            modalSetState(() {});
+                          },
+                          icon: const Icon(Icons.add),
+                          label: const Text('계층 추가'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: tierList
+                          .map(
+                            (tier) => Chip(
+                              label: Text('L$tier'),
+                              avatar:
+                                  const Icon(Icons.layers_outlined, size: 16),
+                              onDeleted: removable.contains(tier)
+                                  ? () {
+                                      setState(() {
+                                        _customTiers.remove(tier);
+                                        _tierOverrides
+                                            .removeWhere((_, value) => value == tier);
+                                      });
+                                      modalSetState(() {});
+                                    }
+                                  : null,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const Divider(height: 24),
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: hosts.length,
+                        separatorBuilder: (_, __) => const Divider(height: 16),
+                        itemBuilder: (context, index) {
+                          final host = hosts[index];
+                          final currentTier = assignments[host.hostname] ?? 0;
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      host.displayName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    Text(
+                                      host.hostname,
+                                      style: const TextStyle(
+                                        color: Colors.white38,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              DropdownButton<int>(
+                                value: currentTier,
+                                items: tierList
+                                    .map(
+                                      (tier) => DropdownMenuItem(
+                                        value: tier,
+                                        child: Text('L$tier'),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  assignments[host.hostname] = value;
+                                  setState(() {
+                                    _tierOverrides[host.hostname] = value;
+                                  });
+                                  modalSetState(() {});
+                                },
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
           },
-          onRemoveTier: (tier) {
-            if (!removable.contains(tier)) {
-              return;
-            }
-            setState(() {
-              _customTiers.remove(tier);
-              _tierOverrides.removeWhere((_, value) => value == tier);
-            });
-          },
-          onAssignTier: (hostname, tier) {
-            assignments[hostname] = tier;
-            setState(() {
-              _tierOverrides[hostname] = tier;
-            });
-          },
-          removableTiers: removable,
         );
       },
     );
@@ -355,6 +454,19 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
         _iconOverrides[hostname] = trimmed;
       }
     });
+  }
+
+  List<int> _availableTiers(Map<String, int> assignments) {
+    final tiers = <int>{
+      0,
+      1,
+      2,
+      3,
+      ...assignments.values,
+      ..._customTiers,
+    }.toList()
+      ..sort();
+    return tiers;
   }
 
   /// Returns which custom tiers are safe to delete (not currently assigned).
@@ -575,6 +687,9 @@ class _TwinViewport extends StatelessWidget {
     required this.iconOverrides,
     required this.formOverrides,
     required this.onRequestEditDevice,
+    required this.panOffset,
+    required this.zoom,
+    required this.tierPalette,
   });
 
   final TwinStateFrame frame;
@@ -596,6 +711,9 @@ class _TwinViewport extends StatelessWidget {
   final Map<String, String> iconOverrides;
   final Map<String, HostDeviceForm> formOverrides;
   final void Function(TwinHost host) onRequestEditDevice;
+  final Offset panOffset;
+  final double zoom;
+  final Set<int> tierPalette;
 
   TwinPosition get _cameraFocus => TwinPosition.lerp(
     cameraFrom,
@@ -624,8 +742,8 @@ class _TwinViewport extends StatelessWidget {
                 viewportConstraints.maxWidth,
                 viewportConstraints.maxHeight,
               );
-              final center = size.center(Offset.zero);
-              final scale = twinScaleFactor(frame, size);
+              final center = size.center(Offset.zero) - panOffset;
+              final scale = twinScaleFactor(frame, size) * zoom;
               final focus = _cameraFocus;
               final projectionMap = <TwinHost, _ProjectedPoint>{
                 for (final host in frame.hosts)
@@ -727,25 +845,26 @@ class _TwinViewport extends StatelessWidget {
                       child: CustomPaint(
                         isComplex: true,
                         willChange: true,
-                        painter: _TwinScenePainter(
-                          frame,
-                          mode: mode,
-                          selectedHost: selectedHost,
-                          heatMax: heatMax,
-                          cameraFrom: cameraFrom,
-                          cameraTo: cameraTo,
-                          cameraAnimation: cameraAnimation,
-                          linkPulse: linkPulse,
-                          repaint: repaint,
-                          projections: {
-                            for (final entry in projectionMap.entries)
-                              entry.key.hostname: entry.value,
-                          },
-                          tierAssignments: tierAssignments,
-                          focusedTier: focusedTier,
-                          layoutPositions: layoutPositions,
-                          formOverrides: formOverrides,
-                        ),
+                    painter: _TwinScenePainter(
+                      frame,
+                      mode: mode,
+                      selectedHost: selectedHost,
+                      heatMax: heatMax,
+                      cameraFrom: cameraFrom,
+                      cameraTo: cameraTo,
+                      cameraAnimation: cameraAnimation,
+                      linkPulse: linkPulse,
+                      repaint: repaint,
+                      projections: {
+                        for (final entry in projectionMap.entries)
+                          entry.key.hostname: entry.value,
+                      },
+                      tierAssignments: tierAssignments,
+                      focusedTier: focusedTier,
+                      layoutPositions: layoutPositions,
+                      formOverrides: formOverrides,
+                      tierPalette: tierPalette,
+                    ),
                         child: const SizedBox.expand(),
                       ),
                     ),
@@ -777,6 +896,7 @@ class _TwinStage extends StatefulWidget {
     required this.formOverrides,
     required this.onClearTierFocus,
     required this.onEditDevice,
+    required this.tierPalette,
   });
 
   final TwinStateFrame frame;
@@ -793,6 +913,7 @@ class _TwinStage extends StatefulWidget {
   final VoidCallback onClearTierFocus;
   final void Function(String hostname, HostDeviceForm form, String? iconPath)
       onEditDevice;
+  final Set<int> tierPalette;
 
   @override
   State<_TwinStage> createState() => _TwinStageState();
@@ -806,6 +927,11 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
   double _linkPhase = 0;
   TwinPosition _cameraFrom = TwinPosition.zero;
   TwinPosition _cameraTo = TwinPosition.zero;
+  Offset _panOffset = Offset.zero;
+  Offset _panStart = Offset.zero;
+  Offset _focalStart = Offset.zero;
+  double _zoom = 1.0;
+  double _zoomStart = 1.0;
 
   @override
   void initState() {
@@ -814,7 +940,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 600),
     )..value = 1;
-    _cameraTo = widget.selectedHost?.position ?? TwinPosition.zero;
+    _cameraTo = widget.selectedHost?.position ?? _sceneCentroid();
     _cameraFrom = _cameraTo;
 
     _linkPulseValue = ValueNotifier<double>(0);
@@ -851,7 +977,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
 
   void _retargetCamera(TwinPosition? target) {
     _cameraFrom = _currentCameraFocus;
-    _cameraTo = target ?? TwinPosition.zero;
+    _cameraTo = target ?? _sceneCentroid();
     _cameraController
       ..stop()
       ..reset()
@@ -863,6 +989,26 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
     _cameraTo,
     Curves.easeOutCubic.transform(_cameraController.value),
   );
+
+  TwinPosition _sceneCentroid() {
+    if (widget.layoutPositions.isEmpty) {
+      return TwinPosition.zero;
+    }
+    double sumX = 0;
+    double sumY = 0;
+    double sumZ = 0;
+    for (final position in widget.layoutPositions.values) {
+      sumX += position.x;
+      sumY += position.y;
+      sumZ += position.z;
+    }
+    final count = widget.layoutPositions.length.toDouble();
+    return TwinPosition(
+      x: sumX / count,
+      y: sumY / count,
+      z: sumZ / count,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -882,33 +1028,60 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
           ),
         );
 
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: _TwinViewport(
-                frame: widget.frame,
-                height: constraints.maxHeight,
-                mode: widget.mode,
-                selectedHost: widget.selectedHost?.hostname,
-                heatMax: widget.heatMax,
-                onSelectHost: widget.onSelectHost,
-                onClearSelection: widget.onClearSelection,
-                onClearTierFocus: widget.onClearTierFocus,
-                cameraFrom: _cameraFrom,
-                cameraTo: _cameraTo,
-                cameraAnimation: _cameraController,
-                linkPulse: _linkPulseValue,
-                repaint: _stageTicker,
-                tierAssignments: widget.tierAssignments,
-                layoutPositions: widget.layoutPositions,
-                focusedTier: widget.focusedTier,
-                iconOverrides: widget.iconOverrides,
-                formOverrides: widget.formOverrides,
-                onRequestEditDevice: _handleEditRequest,
-              ),
+        return Listener(
+          onPointerSignal: (event) {
+            if (event is PointerScrollEvent) {
+              setState(() {
+                _zoom = (_zoom - event.scrollDelta.dy * 0.001)
+                    .clamp(0.6, 2.5);
+              });
+            }
+          },
+          child: GestureDetector(
+            onScaleStart: (details) {
+              _panStart = _panOffset;
+              _zoomStart = _zoom;
+              _focalStart = details.focalPoint;
+            },
+            onScaleUpdate: (details) {
+              setState(() {
+                _zoom = (_zoomStart * details.scale).clamp(0.6, 2.5);
+                final delta = details.focalPoint - _focalStart;
+                _panOffset = _panStart + delta;
+              });
+            },
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: _TwinViewport(
+                    frame: widget.frame,
+                    height: constraints.maxHeight,
+                    mode: widget.mode,
+                    selectedHost: widget.selectedHost?.hostname,
+                    heatMax: widget.heatMax,
+                    onSelectHost: widget.onSelectHost,
+                    onClearSelection: widget.onClearSelection,
+                    onClearTierFocus: widget.onClearTierFocus,
+                    cameraFrom: _cameraFrom,
+                    cameraTo: _cameraTo,
+                    cameraAnimation: _cameraController,
+                    linkPulse: _linkPulseValue,
+                    repaint: _stageTicker,
+                    tierAssignments: widget.tierAssignments,
+                    layoutPositions: widget.layoutPositions,
+                    focusedTier: widget.focusedTier,
+                    iconOverrides: widget.iconOverrides,
+                    formOverrides: widget.formOverrides,
+                    onRequestEditDevice: _handleEditRequest,
+                    panOffset: _panOffset,
+                    zoom: _zoom,
+                    tierPalette: widget.tierPalette,
+                  ),
+                ),
+                hostRail,
+              ],
             ),
-            hostRail,
-          ],
+          ),
         );
       },
     );
@@ -2146,6 +2319,7 @@ class _TwinScenePainter extends CustomPainter {
     required this.focusedTier,
     required this.layoutPositions,
     required this.formOverrides,
+    required this.tierPalette,
     super.repaint,
   });
 
@@ -2162,6 +2336,7 @@ class _TwinScenePainter extends CustomPainter {
   final int? focusedTier;
   final Map<String, TwinPosition> layoutPositions;
   final Map<String, HostDeviceForm> formOverrides;
+  final Set<int> tierPalette;
 
   TwinPosition get _cameraFocus => TwinPosition.lerp(
     cameraFrom,
@@ -2242,29 +2417,44 @@ class _TwinScenePainter extends CustomPainter {
     double scale,
   ) {
     final layers = <int, List<TwinHost>>{};
+    final allTiers = tierPalette.isEmpty
+        ? {0, 1, 2, 3}
+        : tierPalette;
     for (final host in frame.hosts) {
       final layerIndex =
           tierAssignments[host.hostname] ?? _resolveNetworkTier(host);
       layers.putIfAbsent(layerIndex, () => []).add(host);
     }
+    for (final tier in allTiers) {
+      layers.putIfAbsent(tier, () => <TwinHost>[]);
+    }
     final keys = layers.keys.toList()..sort();
     for (final layer in keys) {
       final hosts = layers[layer]!;
-      double minX =
-          (layoutPositions[hosts.first.hostname] ?? hosts.first.position).x;
-      double maxX = minX;
-      double minZ =
-          (layoutPositions[hosts.first.hostname] ?? hosts.first.position).z;
-      double maxZ = minZ;
-      for (final host in hosts) {
-        final viewPosition =
-            layoutPositions[host.hostname] ?? host.position;
-        minX = math.min(minX, viewPosition.x);
-        maxX = math.max(maxX, viewPosition.x);
-        minZ = math.min(minZ, viewPosition.z);
-        maxZ = math.max(maxZ, viewPosition.z);
+      double minX, maxX, minZ, maxZ;
+      if (hosts.isEmpty) {
+        const fallback = 400.0;
+        minX = -fallback;
+        maxX = fallback;
+        minZ = -fallback;
+        maxZ = fallback;
+      } else {
+        minX =
+            (layoutPositions[hosts.first.hostname] ?? hosts.first.position).x;
+        maxX = minX;
+        minZ =
+            (layoutPositions[hosts.first.hostname] ?? hosts.first.position).z;
+        maxZ = minZ;
+        for (final host in hosts) {
+          final viewPosition =
+              layoutPositions[host.hostname] ?? host.position;
+          minX = math.min(minX, viewPosition.x);
+          maxX = math.max(maxX, viewPosition.x);
+          minZ = math.min(minZ, viewPosition.z);
+          maxZ = math.max(maxZ, viewPosition.z);
+        }
       }
-      const padding = 180.0;
+      const padding = 240.0;
       final altitude = layer * 140.0;
       final thickness = 90.0;
       final top = _isoPlatePath(
@@ -5088,135 +5278,6 @@ class _DockDragPayload {
   final Set<SidebarWing> allowedWings;
   final int widthUnits;
   final int heightUnits;
-}
-
-class _TierManagerSheet extends StatelessWidget {
-  const _TierManagerSheet({
-    required this.frame,
-    required this.assignments,
-    required this.tiers,
-    required this.removableTiers,
-    required this.onAddTier,
-    required this.onRemoveTier,
-    required this.onAssignTier,
-  });
-
-  final TwinStateFrame frame;
-  final Map<String, int> assignments;
-  final List<int> tiers;
-  final Set<int> removableTiers;
-  final VoidCallback onAddTier;
-  final ValueChanged<int> onRemoveTier;
-  final void Function(String hostname, int tier) onAssignTier;
-
-  @override
-  Widget build(BuildContext context) {
-    final hosts = frame.hosts
-        .where((host) => !host.isCore)
-        .toList()
-      ..sort((a, b) => a.displayName.compareTo(b.displayName));
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 24,
-          right: 24,
-          top: 24,
-          bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  '계층 관리',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                  ),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: onAddTier,
-                  icon: const Icon(Icons.add),
-                  label: const Text('계층 추가'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: tiers
-                  .map(
-                    (tier) => Chip(
-                      label: Text('L$tier'),
-                      avatar: const Icon(Icons.layers_outlined, size: 16),
-                      onDeleted: removableTiers.contains(tier)
-                          ? () => onRemoveTier(tier)
-                          : null,
-                    ),
-                  )
-                  .toList(),
-            ),
-            const Divider(height: 24),
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: hosts.length,
-                separatorBuilder: (_, __) => const Divider(height: 16),
-                itemBuilder: (context, index) {
-                  final host = hosts[index];
-                  final currentTier = assignments[host.hostname] ?? 0;
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              host.displayName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                            ),
-                            Text(
-                              host.hostname,
-                              style: const TextStyle(
-                                color: Colors.white38,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      DropdownButton<int>(
-                        value: currentTier,
-                        items: tiers
-                            .map(
-                              (tier) => DropdownMenuItem(
-                                value: tier,
-                                child: Text('L$tier'),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          onAssignTier(host.hostname, value);
-                        },
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _DeviceIconMarker extends StatelessWidget {
