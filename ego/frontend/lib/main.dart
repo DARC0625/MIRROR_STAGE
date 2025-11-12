@@ -2,6 +2,18 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+/*
+ * MIRROR STAGE EGO Frontend
+ *
+ * 이 파일은 디지털 트윈 HUD 전체를 구성하는 최상위 엔트리 포인트다.
+ * - 데이터 스트림: TwinChannel 을 통해 수집한 상태를 `_DigitalTwinShell` 이 구독한다.
+ * - 좌/우 사이드바: `_Sidebar`, `_StatusSidebar` 가 4xN 위젯 도킹 시스템을 구성한다.
+ * - 메인 스테이지: `_TwinStage` 가 카메라, 팬/줌, 노드 인터랙션과
+ *   `_TwinScenePainter` 의 2.5D 투영을 관리한다.
+ *
+ * OSI 계층 표현, 노드 드래그, 명령 실행 등 대부분의 상호작용 로직이 여기에 모여있다.
+ */
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -125,6 +137,7 @@ class MirrorStageApp extends StatelessWidget {
   }
 }
 
+/// MIRROR STAGE의 메인 셸. 백엔드 채널을 주입받아 전체 UI를 그린다.
 class DigitalTwinShell extends StatefulWidget {
   const DigitalTwinShell({super.key, this.channel});
 
@@ -134,6 +147,7 @@ class DigitalTwinShell extends StatefulWidget {
   State<DigitalTwinShell> createState() => _DigitalTwinShellState();
 }
 
+/// 상태 스트림을 구독하고 사이드바/스테이지/도킹 레이아웃을 제어한다.
 class _DigitalTwinShellState extends State<DigitalTwinShell> {
   late final TwinChannel _channel;
   late final bool _ownsChannel;
@@ -309,6 +323,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     setState(() => _focusedTier = tier);
   }
 
+  /// 호스트별로 적용된 OSI 계층 번호를 계산한다.
   Map<String, int> _resolveTierAssignments(TwinStateFrame frame) {
     final result = <String, int>{};
     for (final host in frame.hosts) {
@@ -319,8 +334,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     return result;
   }
 
-  /// Packs every host inside a bounded tier plane so the scene stays within
-  /// the default camera framing even as devices are added dynamically.
+  /// 각 OSI 계층 단위로 호스트를 정렬해 카메라 프레이밍 안에 담는다.
   Map<String, TwinPosition> _buildLayoutOverrides(
     TwinStateFrame frame,
     Map<String, int> tierAssignments,
@@ -383,6 +397,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
   }
 }
 
+/// 좌측 HUD 패널. 위젯 도킹과 계층 필터를 제공한다.
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.frame,
@@ -457,6 +472,7 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
+/// 우측 HUD 패널. 선택한 노드의 실시간 위젯과 히스토리를 도킹한다.
 class _StatusSidebar extends StatefulWidget {
   const _StatusSidebar({
     required this.frame,
@@ -548,6 +564,7 @@ class _StatusSidebarState extends State<_StatusSidebar> {
   }
 }
 
+/// CustomPaint 기반 투영 위젯. 3D 포인트를 화면 좌표로 사상한다.
 class _TwinViewport extends StatelessWidget {
   const _TwinViewport({
     required this.frame,
@@ -795,6 +812,7 @@ class _TwinViewport extends StatelessWidget {
   }
 }
 
+/// 팬/줌 카메라와 노드 인터랙션을 담당하는 메인 스테이지.
 class _TwinStage extends StatefulWidget {
   const _TwinStage({
     required this.frame,
@@ -2221,6 +2239,7 @@ class _MetricSample {
   final double? temperature;
 }
 
+/// 링크, 노드, 계층 판을 한번에 그리는 핵심 CustomPainter.
 class _TwinScenePainter extends CustomPainter {
   _TwinScenePainter(
     this.frame, {
@@ -3084,6 +3103,7 @@ Color _tierColor(int tier) {
   return _kTierColors[index];
 }
 
+/// 현재 노드 위치를 감싸는 좌표 범위 계산 결과.
 class _SceneBounds {
   const _SceneBounds({
     required this.minX,
@@ -5160,6 +5180,7 @@ class _TierButton extends StatelessWidget {
   }
 }
 
+/// L1~L7 계층을 나타내는 사이드 도크. 드래그 타깃 겸 필터 버튼.
 class _TierDock extends StatelessWidget {
   const _TierDock({
     required this.tiers,
@@ -5236,6 +5257,7 @@ class _TierDock extends StatelessWidget {
   }
 }
 
+/// 드래그 중인 호스트에 대한 메타데이터.
 class _TierDragPayload {
   const _TierDragPayload({required this.hostname, required this.fromTier});
 
