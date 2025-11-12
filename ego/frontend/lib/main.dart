@@ -15,9 +15,18 @@ const double _cameraYaw = -0.45;
 const double _cameraPitch = 0.95;
 const double _tierHostElevation = 85.0;
 const double _tierDepthSpacing = 220.0;
-const double _tierPlateSpacing = 80.0;
-const double _tierPlatePadding = 110.0;
+const double _tierPlateSpacing = 110.0;
+const double _tierPlatePadding = 160.0;
 const List<int> _kDefaultOsiLayers = [1, 2, 3, 4, 5, 6, 7];
+const List<Color> _kTierColors = [
+  Color(0xFF5EF0FF), // L1
+  Color(0xFF47DBFF),
+  Color(0xFF35C6FF),
+  Color(0xFF2BAEF5),
+  Color(0xFF3A8AE8),
+  Color(0xFF4F6ED6),
+  Color(0xFF5B52C4), // L7
+];
 const Map<String, int> _kTierKeywordMap = {
   'l1': 1,
   'layer1': 1,
@@ -319,7 +328,6 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
     const maxTierWidth = 540.0;
     const minSpacing = 160.0;
     const depthSpacing = _tierDepthSpacing;
-    final layerCount = _kDefaultOsiLayers.length;
     final groups = <int, List<TwinHost>>{};
     for (final host in frame.hosts) {
       final tier = tierAssignments[host.hostname] ?? 0;
@@ -338,7 +346,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
       final startX = hosts.length <= 1 ? 0.0 : -width / 2;
       final step = hosts.length <= 1 ? 0.0 : width / span;
       final tierLevel = _tierLevel(tier);
-      final planeIndex = layerCount - tierLevel;
+      final planeIndex = tierLevel - 1;
       for (var i = 0; i < hosts.length; i++) {
         final offsetX = hosts.length <= 1 ? 0.0 : startX + i * step;
         overrides[hosts[i].hostname] = TwinPosition(
@@ -373,7 +381,6 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
       _tierOverrides[hostname] = normalized;
     });
   }
-
 }
 
 class _Sidebar extends StatelessWidget {
@@ -677,10 +684,11 @@ class _TwinViewport extends StatelessWidget {
                 final host = entry.key;
                 final projection = entry.value;
                 final tier = tierAssignments[host.hostname];
-                final normalizedTier =
-                    _tierLevel(tier ?? _resolveNetworkTier(host));
-                final highlighted = focusedTier == null ||
-                    focusedTier == normalizedTier;
+                final normalizedTier = _tierLevel(
+                  tier ?? _resolveNetworkTier(host),
+                );
+                final highlighted =
+                    focusedTier == null || focusedTier == normalizedTier;
                 final iconPath =
                     iconOverrides[host.hostname] ??
                     host.diagnostics.tags['icon'] ??
@@ -688,16 +696,13 @@ class _TwinViewport extends StatelessWidget {
                 final form =
                     formOverrides[host.hostname] ?? _resolveDeviceForm(host);
                 Widget buildMarker(double opacityFactor) => Opacity(
-                      opacity: (highlighted ? 1 : 0.25) * opacityFactor,
-                      child: Transform.scale(
-                        scale: projection.scaleFactor.clamp(0.7, 1.2),
-                        origin: const Offset(0, 0),
-                        child: _DeviceIconMarker(
-                          assetPath: iconPath,
-                          form: form,
-                        ),
-                      ),
-                    );
+                  opacity: (highlighted ? 1 : 0.25) * opacityFactor,
+                  child: Transform.scale(
+                    scale: projection.scaleFactor.clamp(0.7, 1.2),
+                    origin: const Offset(0, 0),
+                    child: _DeviceIconMarker(assetPath: iconPath, form: form),
+                  ),
+                );
                 final idleMarker = buildMarker(1);
                 return Positioned(
                   left: projection.offset.dx - 20,
@@ -825,7 +830,7 @@ class _TwinStage extends StatefulWidget {
   final VoidCallback onClearTierFocus;
   final void Function(String hostname, int tier) onMoveHostToTier;
   final void Function(String hostname, HostDeviceForm form, String? iconPath)
-      onEditDevice;
+  onEditDevice;
   final Set<int> tierPalette;
 
   @override
@@ -2389,7 +2394,7 @@ class _TwinScenePainter extends CustomPainter {
   ) {
     final tiers = {..._kDefaultOsiLayers, ...tierPalette}.toList()..sort();
     for (final layer in tiers) {
-      final planeIndex = _kDefaultOsiLayers.length - _tierLevel(layer);
+      final planeIndex = _tierLevel(layer) - 1;
       final altitude = planeIndex * _tierPlateSpacing;
       final thickness = _tierPlateSpacing * 0.65;
       final top = _isoPlatePath(
@@ -2411,16 +2416,17 @@ class _TwinScenePainter extends CustomPainter {
         scale,
       );
       final highlighted = focusedTier == null || layer == focusedTier;
+      final layerColor = _tierColor(layer);
       final alphaScale = highlighted ? 1.0 : 0.25;
       final topPath = Path()..addPolygon(top, true);
       canvas.drawPath(
         topPath,
         Paint()
-          ..color = Colors.tealAccent.withValues(alpha: 0.06 * alphaScale)
+          ..color = layerColor.withValues(alpha: 0.06 * alphaScale)
           ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 14),
       );
       final sidePaint = Paint()
-        ..color = Colors.tealAccent.withValues(alpha: 0.04 * alphaScale);
+        ..color = layerColor.withValues(alpha: 0.04 * alphaScale);
       for (var i = 0; i < top.length; i++) {
         final next = (i + 1) % top.length;
         final face = Path()
@@ -2436,7 +2442,7 @@ class _TwinScenePainter extends CustomPainter {
         Paint()
           ..shader = ui.Gradient.linear(top[0], top[2], [
             Colors.white.withValues(alpha: 0.08 * alphaScale),
-            Colors.tealAccent.withValues(alpha: 0.05 * alphaScale),
+            layerColor.withValues(alpha: 0.05 * alphaScale),
           ]),
       );
       canvas.drawPath(
@@ -2444,7 +2450,7 @@ class _TwinScenePainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = highlighted ? 1.4 : 0.8
-          ..color = Colors.white.withValues(alpha: 0.2 * alphaScale),
+          ..color = layerColor.withValues(alpha: 0.35 * alphaScale),
       );
       final centroidX =
           top.fold<double>(0, (sum, point) => sum + point.dx) / top.length;
@@ -2476,7 +2482,7 @@ class _TwinScenePainter extends CustomPainter {
       canvas.drawRRect(
         labelRect,
         Paint()
-          ..color = Colors.black.withValues(alpha: 0.32 * alphaScale)
+          ..color = Colors.black.withValues(alpha: 0.35 * alphaScale)
           ..style = PaintingStyle.fill,
       );
       canvas.drawRRect(
@@ -3067,10 +3073,15 @@ Offset _quadraticPoint(Offset p0, Offset p1, Offset p2, double t) {
 
 double hostBubbleRadius(TwinHost host) {
   if (host.isCore) {
-    return 22.0;
+    return 18.0;
   }
   final cpuLoad = host.metrics.cpuLoad.clamp(0.0, 100.0);
-  return 10.0 + cpuLoad * 0.06;
+  return 8.0 + cpuLoad * 0.04;
+}
+
+Color _tierColor(int tier) {
+  final index = (_tierLevel(tier) - 1).clamp(0, _kTierColors.length - 1);
+  return _kTierColors[index];
 }
 
 class _SceneBounds {
@@ -5165,7 +5176,7 @@ class _TierDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ordered = tiers.toList()..sort();
-    final display = ordered.reversed.toList(); // L7 at top
+    final display = ordered; // L1 at top
     return Material(
       color: Colors.black.withValues(alpha: 0.25),
       borderRadius: BorderRadius.circular(16),
@@ -5183,34 +5194,35 @@ class _TierDock extends StatelessWidget {
               builder: (context, candidateData, rejectedData) {
                 final hovered = candidateData.isNotEmpty;
                 final isActive = focusedTier == tier;
+                final layerColor = _tierColor(tier);
                 final bgColor = hovered
-                    ? Colors.tealAccent.withValues(alpha: 0.35)
+                    ? layerColor.withValues(alpha: 0.35)
                     : isActive
-                        ? Colors.tealAccent.withValues(alpha: 0.2)
-                        : Colors.white.withValues(alpha: 0.08);
+                    ? layerColor.withValues(alpha: 0.22)
+                    : Colors.white.withValues(alpha: 0.08);
                 return GestureDetector(
                   onTap: () => onFocusTier(isActive ? null : tier),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     margin: const EdgeInsets.symmetric(vertical: 4),
                     width: 64,
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: bgColor,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: hovered || isActive
-                            ? Colors.tealAccent
+                            ? layerColor
                             : Colors.white.withValues(alpha: 0.3),
                       ),
                     ),
                     child: Center(
                       child: Text(
                         'L$tier',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),
@@ -5225,10 +5237,7 @@ class _TierDock extends StatelessWidget {
 }
 
 class _TierDragPayload {
-  const _TierDragPayload({
-    required this.hostname,
-    required this.fromTier,
-  });
+  const _TierDragPayload({required this.hostname, required this.fromTier});
 
   final String hostname;
   final int fromTier;
