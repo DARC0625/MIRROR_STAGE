@@ -270,8 +270,7 @@ class _Sidebar extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          Flexible(
-            fit: FlexFit.loose,
+          Expanded(
             child: _WidgetGridPanel(
               wing: wing,
               controller: controller,
@@ -471,7 +470,6 @@ class _TwinViewport extends StatelessWidget {
                   ignoring: true,
                   child: _HostHoloCard(
                     host: selectedHostModel,
-                    anchor: anchor,
                     preferRight: showRight,
                   ),
                 ),
@@ -1521,12 +1519,10 @@ class _HostHoloCard extends StatefulWidget {
   const _HostHoloCard({
     required this.host,
     required this.preferRight,
-    required this.anchor,
   });
 
   final TwinHost host;
   final bool preferRight;
-  final Offset anchor;
 
   @override
   State<_HostHoloCard> createState() => _HostHoloCardState();
@@ -1947,58 +1943,89 @@ class _TwinScenePainter extends CustomPainter {
     Offset center,
     double scale,
   ) {
-    final layers = <int, List<Offset>>{};
+    final layers = <int, List<TwinHost>>{};
     for (final host in frame.hosts) {
       final layerIndex = _layerIndex(host.position.y);
-      final point = twinProjectPoint(
-        host.position,
-        center,
-        scale,
-        _cameraFocus,
-      );
-      layers.putIfAbsent(layerIndex, () => []).add(point);
+      layers.putIfAbsent(layerIndex, () => []).add(host);
     }
     final keys = layers.keys.toList()..sort();
     for (final layer in keys) {
-      final points = layers[layer]!;
-      double minX = points.first.dx;
-      double maxX = points.first.dx;
-      double minY = points.first.dy;
-      double maxY = points.first.dy;
-      for (final point in points) {
-        minX = math.min(minX, point.dx);
-        maxX = math.max(maxX, point.dx);
-        minY = math.min(minY, point.dy);
-        maxY = math.max(maxY, point.dy);
+      final hosts = layers[layer]!;
+      double minX = hosts.first.position.x;
+      double maxX = hosts.first.position.x;
+      double minZ = hosts.first.position.z;
+      double maxZ = hosts.first.position.z;
+      for (final host in hosts) {
+        minX = math.min(minX, host.position.x);
+        maxX = math.max(maxX, host.position.x);
+        minZ = math.min(minZ, host.position.z);
+        maxZ = math.max(maxZ, host.position.z);
       }
-      final depth = layer * 14.0;
-      final rect = Rect.fromLTRB(
-        (minX - 120).clamp(0.0, size.width),
-        (minY - 60 + depth).clamp(0.0, size.height),
-        (maxX + 120).clamp(0.0, size.width),
-        (maxY + 80 + depth).clamp(0.0, size.height),
+      const padding = 140.0;
+      final altitude = layer * 90.0;
+      final path = _isoPlatePath(
+        minX - padding,
+        maxX + padding,
+        minZ - padding,
+        maxZ + padding,
+        altitude,
+        center,
+        scale,
       );
-      final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(160));
       final paint = Paint()
-        ..shader = ui.Gradient.linear(
-          rect.topLeft,
-          rect.bottomRight,
+        ..shader = ui.Gradient.radial(
+          size.center(Offset.zero),
+          size.shortestSide,
           [
+            Colors.blueGrey.withValues(alpha: 0.04),
             Colors.tealAccent.withValues(alpha: 0.05),
-            Colors.blueGrey.withValues(alpha: 0.02),
           ],
         );
-      canvas.drawRRect(rrect, paint);
-      canvas.drawRRect(
-        rrect.deflate(1.5),
+      canvas.drawPath(path, paint);
+      canvas.drawPath(
+        path,
         Paint()
           ..style = PaintingStyle.stroke
-          ..color = Colors.white.withValues(alpha: 0.04),
+          ..strokeWidth = 1.3
+          ..color = Colors.white.withValues(alpha: 0.08),
       );
     }
   }
 
-  int _layerIndex(double y) => (y / 160).round();
+  Path _isoPlatePath(
+    double minX,
+    double maxX,
+    double minZ,
+    double maxZ,
+    double altitude,
+    Offset center,
+    double scale,
+  ) {
+    final corners = [
+      TwinPosition(x: minX, y: altitude, z: minZ),
+      TwinPosition(x: maxX, y: altitude, z: minZ),
+      TwinPosition(x: maxX, y: altitude, z: maxZ),
+      TwinPosition(x: minX, y: altitude, z: maxZ),
+    ];
+    final points = corners
+        .map(
+          (position) => twinProjectPoint(
+            position,
+            center,
+            scale,
+            _cameraFocus,
+          ),
+        )
+        .toList(growable: false);
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (var i = 1; i < points.length; i++) {
+      path.lineTo(points[i].dx, points[i].dy);
+    }
+    path.close();
+    return path;
+  }
+
+  int _layerIndex(double y) => (y / 140).round();
 
   void _paintLinks(
     Canvas canvas,
@@ -2189,7 +2216,7 @@ class _TwinScenePainter extends CustomPainter {
     final focus = _cameraFocus;
 
     for (final host in frame.hosts) {
-      final position = twinProjectPoint(
+      final basePosition = twinProjectPoint(
         host.position,
         center,
         scale,
@@ -2225,58 +2252,72 @@ class _TwinScenePainter extends CustomPainter {
       }
 
       final radius = hostBubbleRadius(host);
-      final pinHeight = radius * 1.4;
+      final towerHeight = 18.0 + host.metrics.cpuLoad * 0.15;
+      final topPoints = _isoDiamondPoints(basePosition, radius);
 
-      final pinPaint = Paint()
+      final sideRight = Path()
+        ..moveTo(topPoints[1].dx, topPoints[1].dy)
+        ..lineTo(topPoints[2].dx, topPoints[2].dy)
+        ..lineTo(topPoints[2].dx, topPoints[2].dy + towerHeight)
+        ..lineTo(topPoints[1].dx, topPoints[1].dy + towerHeight)
+        ..close();
+      final sideLeft = Path()
+        ..moveTo(topPoints[3].dx, topPoints[3].dy)
+        ..lineTo(topPoints[2].dx, topPoints[2].dy)
+        ..lineTo(topPoints[2].dx, topPoints[2].dy + towerHeight)
+        ..lineTo(topPoints[3].dx, topPoints[3].dy + towerHeight)
+        ..close();
+
+      final rightPaint = Paint()
         ..shader = ui.Gradient.linear(
-          Offset(position.dx, position.dy - pinHeight),
-          Offset(position.dx, position.dy + pinHeight),
+          topPoints[1],
+          topPoints[1] + Offset(0, towerHeight),
           [
-            Colors.white.withValues(alpha: 0.0),
-            color.withValues(alpha: 0.45),
+            color.withValues(alpha: 0.75),
+            Colors.blueGrey.withValues(alpha: 0.35),
           ],
-        )
-        ..strokeWidth = isSelected ? 2.6 : 1.6
-        ..strokeCap = StrokeCap.round;
-      canvas.drawLine(
-        Offset(position.dx, position.dy - pinHeight),
-        Offset(position.dx, position.dy + pinHeight * 0.8),
-        pinPaint,
+        );
+      canvas.drawPath(sideRight, rightPaint);
+      canvas.drawPath(
+        sideLeft,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            topPoints[3],
+            topPoints[3] + Offset(0, towerHeight),
+            [
+              color.withValues(alpha: 0.55),
+              Colors.blueGrey.withValues(alpha: 0.25),
+            ],
+          ),
       );
 
-      final diamond = Path()
-        ..moveTo(position.dx, position.dy - radius)
-        ..lineTo(position.dx + radius, position.dy)
-        ..lineTo(position.dx, position.dy + radius * 1.4)
-        ..lineTo(position.dx - radius, position.dy)
-        ..close();
-      final diamondPaint = Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(position.dx, position.dy - radius),
-          Offset(position.dx, position.dy + radius * 1.4),
+      final top = Path()..addPolygon(topPoints, true);
+      final topPaint = Paint()
+        ..shader = ui.Gradient.radial(
+          basePosition,
+          radius * 1.4,
           [
-            Colors.white.withValues(alpha: 0.9),
+            Colors.white.withValues(alpha: 0.95),
             color.withValues(alpha: isCore ? 0.95 : 0.7),
           ],
-        )
-        ..style = PaintingStyle.fill;
-      canvas.drawPath(diamond, diamondPaint);
+        );
+      canvas.drawPath(top, topPaint);
 
       if (isSelected) {
         canvas.drawPath(
-          diamond,
+          top,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 2
-            ..color = Colors.white.withValues(alpha: 0.6),
+            ..strokeWidth = 1.6
+            ..color = Colors.white.withValues(alpha: 0.7),
         );
       }
 
       if (host.isDummy && !isCore) {
         final markerPath = Path()
-          ..moveTo(position.dx, position.dy - radius - 4)
-          ..lineTo(position.dx + 8, position.dy - radius - 16)
-          ..lineTo(position.dx - 8, position.dy - radius - 16)
+          ..moveTo(basePosition.dx, basePosition.dy - radius - 4)
+          ..lineTo(basePosition.dx + 8, basePosition.dy - radius - 16)
+          ..lineTo(basePosition.dx - 8, basePosition.dy - radius - 16)
           ..close();
         canvas.drawPath(
           markerPath,
@@ -2286,44 +2327,34 @@ class _TwinScenePainter extends CustomPainter {
         );
       }
 
-      final labelText = host.isDummy
-          ? '${host.displayLabel}\n(더미)'
-          : host.displayLabel;
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: labelText,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: isSelected ? 1 : 0.85),
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
+      if (selectedHost != host.hostname) {
+        final labelText = host.displayName;
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: labelText,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: 160);
-
-      textPainter.paint(
-        canvas,
-        position + Offset(-textPainter.width / 2, radius + 6),
-      );
-
-      final infoPainter = TextPainter(
-        text: TextSpan(
-          text:
-              'CPU ${host.metrics.cpuLoad.toStringAsFixed(0)}% · RAM ${host.metrics.memoryUsedPercent.toStringAsFixed(0)}%',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.7),
-            fontSize: 10,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: 180);
-
-      infoPainter.paint(
-        canvas,
-        position + Offset(-infoPainter.width / 2, radius + 24),
-      );
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: 160);
+        textPainter.paint(
+          canvas,
+          topPoints[0] +
+              Offset(-textPainter.width / 2, -textPainter.height - 6),
+        );
+      }
     }
+  }
+
+  List<Offset> _isoDiamondPoints(Offset center, double radius) {
+    final top = Offset(center.dx, center.dy - radius * 0.6);
+    final right = Offset(center.dx + radius * 1.2, center.dy - radius * 0.05);
+    final bottom = Offset(center.dx, center.dy + radius * 0.9);
+    final left = Offset(center.dx - radius * 1.2, center.dy - radius * 0.05);
+    return [top, right, bottom, left];
   }
 
   @override
@@ -2354,9 +2385,12 @@ Offset twinProjectPoint(
   TwinPosition focus = TwinPosition.zero,
 ]) {
   final adjusted = position.subtract(focus);
-  final x = center.dx + adjusted.x * scale;
-  final y = center.dy + adjusted.z * scale - adjusted.y * 0.8;
-  return Offset(x, y);
+  final isoX = (adjusted.x - adjusted.z) * 0.75;
+  final isoY = (adjusted.x + adjusted.z) * 0.35 - adjusted.y * 0.9;
+  return Offset(
+    center.dx + isoX * scale,
+    center.dy + isoY * scale,
+  );
 }
 
 Offset _quadraticPoint(Offset p0, Offset p1, Offset p2, double t) {
