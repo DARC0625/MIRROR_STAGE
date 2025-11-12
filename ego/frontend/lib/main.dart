@@ -430,27 +430,58 @@ class _TwinViewport extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, viewportConstraints) {
-              final size = Size(
-                viewportConstraints.maxWidth,
-                viewportConstraints.maxHeight,
+          final size = Size(
+            viewportConstraints.maxWidth,
+            viewportConstraints.maxHeight,
+          );
+          final center = size.center(Offset.zero);
+          final scale = twinScaleFactor(frame, size);
+          final focus = _cameraFocus;
+          final hostPositions = <TwinHost, Offset>{
+            for (final host in frame.hosts)
+              host: twinProjectPoint(
+                host.position,
+                center,
+                scale,
+                focus,
+              ),
+          };
+          final selectedHostModel = selectedHost != null
+              ? frame.hostByName(selectedHost!)
+              : null;
+          Widget? holoCard;
+          if (selectedHostModel != null) {
+            final anchor = hostPositions[selectedHostModel];
+            if (anchor != null) {
+              const cardSize = Size(240, 160);
+              final clampedLeft = (anchor.dx - cardSize.width / 2)
+                  .clamp(8.0, size.width - cardSize.width - 8.0);
+              final clampedTop = (anchor.dy - cardSize.height - 28)
+                  .clamp(8.0, size.height - cardSize.height - 8.0);
+              holoCard = Positioned(
+                left: clampedLeft,
+                top: clampedTop,
+                width: cardSize.width,
+                child: IgnorePointer(
+                  ignoring: true,
+                  child: _HostHoloCard(host: selectedHostModel),
+                ),
               );
-              final center = size.center(Offset.zero);
-              final scale = twinScaleFactor(frame, size);
+            }
+          }
 
-              return GestureDetector(
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapDown: (details) {
                   final tap = details.localPosition;
                   TwinHost? nearest;
                   double minDistance = double.infinity;
-                  final focus = _cameraFocus;
-                  for (final host in frame.hosts) {
-                    final point = twinProjectPoint(
-                      host.position,
-                      center,
-                      scale,
-                      focus,
-                    );
+                  for (final entry in hostPositions.entries) {
+                    final host = entry.key;
+                    final point = entry.value;
                     final radius = hostBubbleRadius(host);
                     final distance = (tap - point).distance;
                     if (distance <= radius + 14 && distance < minDistance) {
@@ -482,9 +513,12 @@ class _TwinViewport extends StatelessWidget {
                     child: const SizedBox.expand(),
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+              if (holoCard != null) holoCard,
+            ],
+          );
+        },
+      ),
         ),
       ),
     );
@@ -1469,6 +1503,338 @@ class _HostChip extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _HostHoloCard extends StatefulWidget {
+  const _HostHoloCard({required this.host});
+
+  final TwinHost host;
+
+  @override
+  State<_HostHoloCard> createState() => _HostHoloCardState();
+}
+
+class _HostHoloCardState extends State<_HostHoloCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      child: _HostHoloSurface(host: widget.host),
+      builder: (context, child) {
+        final phase = _controller.value;
+        final wave = math.sin(phase * math.pi * 2);
+        final scale = 1 + wave.abs() * 0.015;
+        final glitchOpacity = wave > 0.8 ? (wave - 0.8) * 3 : 0.0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: -26,
+              height: 42,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      colors: [
+                        Colors.tealAccent.withValues(alpha: 0.22),
+                        Colors.transparent,
+                      ],
+                      radius: 0.95,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Transform.scale(scale: scale, child: child),
+            if (glitchOpacity > 0)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: glitchOpacity.clamp(0.0, 0.45),
+                  child: Transform.translate(
+                    offset: Offset(3 * wave, -2),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(22),
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.cyanAccent.withValues(alpha: 0.35),
+                            Colors.pinkAccent.withValues(alpha: 0.25),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _HostHoloSurface extends StatelessWidget {
+  const _HostHoloSurface({required this.host});
+
+  final TwinHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    final cpuUsage = host.metrics.cpuLoad.clamp(0, 100).toDouble();
+    final memUsage =
+        host.metrics.memoryUsedPercent.clamp(0, 100).toDouble();
+    final statusColor = switch (host.status) {
+      TwinHostStatus.online => Colors.tealAccent,
+      TwinHostStatus.stale => Colors.amberAccent,
+      TwinHostStatus.offline => Colors.redAccent,
+    };
+    final statusLabel = switch (host.status) {
+      TwinHostStatus.online => 'ONLINE',
+      TwinHostStatus.stale => 'DEGRADED',
+      TwinHostStatus.offline => 'OFFLINE',
+    };
+    final osLabel = host.osDisplay.isNotEmpty ? host.osDisplay : host.platform;
+    final uptime = _formatDuration(host.uptime);
+    final rack = host.rack ?? 'UNASSIGNED';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xF006101C),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.tealAccent.withValues(alpha: 0.45)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.tealAccent.withValues(alpha: 0.22),
+            blurRadius: 24,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  host.displayName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: statusColor.withValues(alpha: 0.2),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            osLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _HoloProgressTile(
+                  label: 'CPU',
+                  value: '${cpuUsage.toStringAsFixed(1)}%',
+                  percent: cpuUsage / 100,
+                  accent: Colors.tealAccent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _HoloProgressTile(
+                  label: 'MEM',
+                  value: '${memUsage.toStringAsFixed(1)}%',
+                  percent: memUsage / 100,
+                  accent: Colors.pinkAccent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              _HoloDatum(
+                icon: Icons.public,
+                label: 'IP',
+                value: host.ip,
+              ),
+              _HoloDatum(
+                icon: Icons.access_time,
+                label: '업타임',
+                value: uptime,
+              ),
+              _HoloDatum(
+                icon: Icons.terminal,
+                label: 'Agent',
+                value: host.agentVersion,
+              ),
+              _HoloDatum(
+                icon: Icons.memory,
+                label: 'CPU',
+                value: host.cpuSummary,
+              ),
+              _HoloDatum(
+                icon: Icons.hub,
+                label: 'Rack',
+                value: rack,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HoloProgressTile extends StatelessWidget {
+  const _HoloProgressTile({
+    required this.label,
+    required this.value,
+    required this.percent,
+    required this.accent,
+  });
+
+  final String label;
+  final String value;
+  final double percent;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: percent.clamp(0.0, 1.0),
+            minHeight: 6,
+            backgroundColor: const Color(0xFF071021),
+            valueColor: AlwaysStoppedAnimation<Color>(accent),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HoloDatum extends StatelessWidget {
+  const _HoloDatum({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0x331B2333)),
+        color: const Color(0x44080E17),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white60),
+          const SizedBox(width: 6),
+          Text(
+            '$label ',
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
