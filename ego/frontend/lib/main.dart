@@ -318,9 +318,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
           builder: (context, modalSetState) {
             final tierList = _availableTiers(assignments);
             final removable = _removableTiers(assignments);
-            final hosts = frame.hosts
-                .where((host) => !host.isCore)
-                .toList()
+            final hosts = frame.hosts.where((host) => !host.isCore).toList()
               ..sort((a, b) => a.displayName.compareTo(b.displayName));
             return SafeArea(
               child: Padding(
@@ -365,14 +363,17 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
                           .map(
                             (tier) => Chip(
                               label: Text('L$tier'),
-                              avatar:
-                                  const Icon(Icons.layers_outlined, size: 16),
+                              avatar: const Icon(
+                                Icons.layers_outlined,
+                                size: 16,
+                              ),
                               onDeleted: removable.contains(tier)
                                   ? () {
                                       setState(() {
                                         _customTiers.remove(tier);
-                                        _tierOverrides
-                                            .removeWhere((_, value) => value == tier);
+                                        _tierOverrides.removeWhere(
+                                          (_, value) => value == tier,
+                                        );
                                       });
                                       modalSetState(() {});
                                     }
@@ -471,15 +472,14 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
       3,
       ...assignments.values,
       ..._customTiers,
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     return tiers;
   }
 
   /// Returns which custom tiers are safe to delete (not currently assigned).
-  Set<int> _removableTiers(Map<String, int> assignments) => {
-        ..._customTiers,
-      }..removeWhere((tier) => assignments.values.contains(tier));
+  Set<int> _removableTiers(Map<String, int> assignments) =>
+      {..._customTiers}
+        ..removeWhere((tier) => assignments.values.contains(tier));
 
   /// Picks the next tier number that is not already used by built-in layers,
   /// user-defined tiers, or overrides. Ensures numbering stays compact.
@@ -750,7 +750,13 @@ class _TwinViewport extends StatelessWidget {
                 viewportConstraints.maxHeight,
               );
               final center = size.center(Offset.zero) - panOffset;
-              final scale = twinScaleFactor(frame, size) * zoom;
+              final scale =
+                  twinScaleFactor(
+                    frame,
+                    size,
+                    layoutOverrides: layoutPositions,
+                  ) *
+                  zoom;
               final focus = _cameraFocus;
               final projectionMap = <TwinHost, _ProjectedPoint>{
                 for (final host in frame.hosts)
@@ -774,10 +780,14 @@ class _TwinViewport extends StatelessWidget {
                   final desiredLeft = showRight
                       ? anchor.dx + horizontalOffset
                       : anchor.dx - cardSize.width - horizontalOffset;
-                  final clampedLeft = desiredLeft
-                      .clamp(8.0, size.width - cardSize.width - 8.0);
-                  final clampedTop = (anchor.dy - cardSize.height * 0.5)
-                      .clamp(8.0, size.height - cardSize.height - 8.0);
+                  final clampedLeft = desiredLeft.clamp(
+                    8.0,
+                    size.width - cardSize.width - 8.0,
+                  );
+                  final clampedTop = (anchor.dy - cardSize.height * 0.5).clamp(
+                    8.0,
+                    size.height - cardSize.height - 8.0,
+                  );
                   holoCard = Positioned(
                     left: clampedLeft,
                     top: clampedTop,
@@ -786,7 +796,8 @@ class _TwinViewport extends StatelessWidget {
                       host: selectedHostModel,
                       preferRight: showRight,
                       formOverride: formOverrides[selectedHostModel.hostname],
-                      iconPath: iconOverrides[selectedHostModel.hostname] ??
+                      iconPath:
+                          iconOverrides[selectedHostModel.hostname] ??
                           selectedHostModel.diagnostics.tags['icon'],
                       onEdit: () => onRequestEditDevice(selectedHostModel),
                     ),
@@ -798,9 +809,9 @@ class _TwinViewport extends StatelessWidget {
                 final host = entry.key;
                 final projection = entry.value;
                 final tier = tierAssignments[host.hostname];
-                final highlighted =
-                    focusedTier == null || focusedTier == tier;
-                final iconPath = iconOverrides[host.hostname] ??
+                final highlighted = focusedTier == null || focusedTier == tier;
+                final iconPath =
+                    iconOverrides[host.hostname] ??
                     host.diagnostics.tags['icon'] ??
                     host.diagnostics.tags['iconPath'];
                 final form =
@@ -852,26 +863,26 @@ class _TwinViewport extends StatelessWidget {
                       child: CustomPaint(
                         isComplex: true,
                         willChange: true,
-                    painter: _TwinScenePainter(
-                      frame,
-                      mode: mode,
-                      selectedHost: selectedHost,
-                      heatMax: heatMax,
-                      cameraFrom: cameraFrom,
-                      cameraTo: cameraTo,
-                      cameraAnimation: cameraAnimation,
-                      linkPulse: linkPulse,
-                      repaint: repaint,
-                      projections: {
-                        for (final entry in projectionMap.entries)
-                          entry.key.hostname: entry.value,
-                      },
-                      tierAssignments: tierAssignments,
-                      focusedTier: focusedTier,
-                      layoutPositions: layoutPositions,
-                      formOverrides: formOverrides,
-                      tierPalette: tierPalette,
-                    ),
+                        painter: _TwinScenePainter(
+                          frame,
+                          mode: mode,
+                          selectedHost: selectedHost,
+                          heatMax: heatMax,
+                          cameraFrom: cameraFrom,
+                          cameraTo: cameraTo,
+                          cameraAnimation: cameraAnimation,
+                          linkPulse: linkPulse,
+                          repaint: repaint,
+                          projections: {
+                            for (final entry in projectionMap.entries)
+                              entry.key.hostname: entry.value,
+                          },
+                          tierAssignments: tierAssignments,
+                          focusedTier: focusedTier,
+                          layoutPositions: layoutPositions,
+                          formOverrides: formOverrides,
+                          tierPalette: tierPalette,
+                        ),
                         child: const SizedBox.expand(),
                       ),
                     ),
@@ -919,7 +930,7 @@ class _TwinStage extends StatefulWidget {
   final Map<String, HostDeviceForm> formOverrides;
   final VoidCallback onClearTierFocus;
   final void Function(String hostname, HostDeviceForm form, String? iconPath)
-      onEditDevice;
+  onEditDevice;
   final Set<int> tierPalette;
 
   @override
@@ -1011,11 +1022,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
       sumZ += position.z;
     }
     final count = widget.layoutPositions.length.toDouble();
-    return TwinPosition(
-      x: sumX / count,
-      y: sumY / count,
-      z: sumZ / count,
-    );
+    return TwinPosition(x: sumX / count, y: sumY / count, z: sumZ / count);
   }
 
   Offset _clampPan(Offset candidate) {
@@ -1053,8 +1060,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
           onPointerSignal: (event) {
             if (event is PointerScrollEvent) {
               setState(() {
-                _zoom = (_zoom - event.scrollDelta.dy * 0.001)
-                    .clamp(0.6, 2.5);
+                _zoom = (_zoom - event.scrollDelta.dy * 0.001).clamp(0.6, 2.5);
                 _panOffset = _clampPan(_panOffset);
               });
             }
@@ -1380,15 +1386,16 @@ class _SidebarOverviewCard extends StatelessWidget {
     final cpuValue = (host?.metrics.cpuLoad ?? frame.averageCpuLoad)
         .clamp(0, 100)
         .toDouble();
-    final memValue = (host?.metrics.memoryUsedPercent ?? frame.memoryUtilizationPercent)
-        .clamp(0, 100)
-        .toDouble();
+    final memValue =
+        (host?.metrics.memoryUsedPercent ?? frame.memoryUtilizationPercent)
+            .clamp(0, 100)
+            .toDouble();
 
     final cpuSubtitle = host != null
         ? '업타임 ${_formatDuration(host.uptime)}'
         : (frame.averageCpuTemperature > 0
-            ? '온도 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃'
-            : null);
+              ? '온도 ${frame.averageCpuTemperature.toStringAsFixed(1)}℃'
+              : null);
     final memSubtitle = host != null ? _formatHostMemorySubtitle(host) : null;
 
     return Column(
@@ -1398,7 +1405,10 @@ class _SidebarOverviewCard extends StatelessWidget {
           headerLabel,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+          style: const TextStyle(
+            color: Colors.white70,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 8),
         Expanded(
@@ -1619,74 +1629,70 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
           border: Border.all(color: const Color(0x221B2333)),
         );
 
-        Widget fieldShell(Widget child) => DecoratedBox(
-              decoration: decoration,
-              child: child,
-            );
+        Widget fieldShell(Widget child) =>
+            DecoratedBox(decoration: decoration, child: child);
 
         Widget dropdownField() => fieldShell(
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedHostname ?? hostItems.first.value,
-                    isExpanded: true,
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16),
-                    dropdownColor: const Color(0xFF0C1424),
-                    style: fieldTextStyle,
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _selectedHostname = value;
-                        _formError = null;
-                      });
-                    },
-                    items: hostItems,
-                  ),
-                ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedHostname ?? hostItems.first.value,
+                isExpanded: true,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16),
+                dropdownColor: const Color(0xFF0C1424),
+                style: fieldTextStyle,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _selectedHostname = value;
+                    _formError = null;
+                  });
+                },
+                items: hostItems,
               ),
-            );
+            ),
+          ),
+        );
 
         Widget textField(
           TextEditingController controller, {
           String? hint,
           TextInputType? keyboardType,
         }) => fieldShell(
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: TextField(
-                  controller: controller,
-                  keyboardType: keyboardType,
-                  style: fieldTextStyle,
-                  expands: true,
-                  minLines: null,
-                  maxLines: null,
-                  textAlignVertical: TextAlignVertical.center,
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    isDense: true,
-                    hintText: hint,
-                    hintStyle: fieldTextStyle.copyWith(
-                      color: Colors.white38,
-                    ),
-                  ),
-                ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboardType,
+              style: fieldTextStyle,
+              expands: true,
+              minLines: null,
+              maxLines: null,
+              textAlignVertical: TextAlignVertical.center,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                hintText: hint,
+                hintStyle: fieldTextStyle.copyWith(color: Colors.white38),
               ),
-            );
+            ),
+          ),
+        );
 
         Widget fieldRow(String label, Widget child) => SizedBox(
-              height: controlHeight,
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: labelWidth,
-                    child: Text(label, style: labelStyle),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: SizedBox.expand(child: child)),
-                ],
+          height: controlHeight,
+          child: Row(
+            children: [
+              SizedBox(
+                width: labelWidth,
+                child: Text(label, style: labelStyle),
               ),
-            );
+              const SizedBox(width: 8),
+              Expanded(child: SizedBox.expand(child: child)),
+            ],
+          ),
+        );
 
         final buttonWidth = dense ? 74.0 : 90.0;
 
@@ -1706,10 +1712,7 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
             SizedBox(height: gap),
             fieldRow(
               '명령',
-              textField(
-                _commandController,
-                hint: '예) ipconfig /all',
-              ),
+              textField(_commandController, hint: '예) ipconfig /all'),
             ),
             SizedBox(height: gap),
             fieldRow(
@@ -2064,22 +2067,19 @@ class _HostHoloCard extends StatelessWidget {
     final osLabel = host.osDisplay.isNotEmpty ? host.osDisplay : host.platform;
     final uptime = _formatDuration(host.uptime);
     final rack = host.rack ?? 'UNASSIGNED';
-    final deviceLabel = _formLabel(
-      formOverride ?? _resolveDeviceForm(host),
-    );
+    final deviceLabel = _formLabel(formOverride ?? _resolveDeviceForm(host));
 
     final highlightBegin = preferRight ? Alignment.topLeft : Alignment.topRight;
-    final highlightEnd = preferRight ? Alignment.bottomRight : Alignment.bottomLeft;
+    final highlightEnd = preferRight
+        ? Alignment.bottomRight
+        : Alignment.bottomLeft;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xF006101C),
         gradient: LinearGradient(
-          colors: [
-            Colors.white.withValues(alpha: 0.04),
-            Colors.transparent,
-          ],
+          colors: [Colors.white.withValues(alpha: 0.04), Colors.transparent],
           begin: highlightBegin,
           end: highlightEnd,
         ),
@@ -2110,8 +2110,10 @@ class _HostHoloCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
                   color: statusColor.withValues(alpha: 0.2),
@@ -2167,7 +2169,8 @@ class _HostHoloCard extends StatelessWidget {
               _HoloDatum(
                 icon: Icons.toc,
                 label: '코어',
-                value: '${host.hardware.cpuPhysicalCores ?? '-'}P / ${host.hardware.cpuLogicalCores ?? '-'}T',
+                value:
+                    '${host.hardware.cpuPhysicalCores ?? '-'}P / ${host.hardware.cpuLogicalCores ?? '-'}T',
               ),
               _HoloDatum(
                 icon: Icons.sd_storage,
@@ -2177,7 +2180,8 @@ class _HostHoloCard extends StatelessWidget {
               _HoloDatum(
                 icon: Icons.computer,
                 label: 'GPU',
-                value: host.diagnostics.tags['gpuModel'] ??
+                value:
+                    host.diagnostics.tags['gpuModel'] ??
                     host.diagnostics.tags['gpu'] ??
                     '정보 없음',
               ),
@@ -2197,42 +2201,26 @@ class _HostHoloCard extends StatelessWidget {
             spacing: 10,
             runSpacing: 8,
             children: [
-              _HoloDatum(
-                icon: Icons.public,
-                label: 'IP',
-                value: host.ip,
-              ),
+              _HoloDatum(icon: Icons.public, label: 'IP', value: host.ip),
               _HoloDatum(
                 icon: Icons.router,
                 label: 'NIC',
                 value: _formatInterfaceSummary(host.diagnostics.interfaces),
               ),
               if (iconPath != null)
-                _HoloDatum(
-                  icon: Icons.image,
-                  label: '아이콘',
-                  value: iconPath!,
-                ),
+                _HoloDatum(icon: Icons.image, label: '아이콘', value: iconPath!),
               _HoloDatum(
                 icon: Icons.storage,
                 label: '스토리지',
                 value: _summarizeDisks(host.diagnostics.disks),
               ),
-              _HoloDatum(
-                icon: Icons.access_time,
-                label: '업타임',
-                value: uptime,
-              ),
+              _HoloDatum(icon: Icons.access_time, label: '업타임', value: uptime),
               _HoloDatum(
                 icon: Icons.terminal,
                 label: 'Agent',
                 value: host.agentVersion,
               ),
-              _HoloDatum(
-                icon: Icons.hub,
-                label: 'Rack',
-                value: rack,
-              ),
+              _HoloDatum(icon: Icons.hub, label: 'Rack', value: rack),
             ],
           ),
         ],
@@ -2268,10 +2256,7 @@ class _HoloDatum extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             '$label ',
-            style: const TextStyle(
-              color: Colors.white54,
-              fontSize: 11,
-            ),
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
           ),
           Flexible(
             child: Text(
@@ -2372,7 +2357,11 @@ class _TwinScenePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     _paintGrid(canvas, size);
     final center = size.center(Offset.zero);
-    final scale = twinScaleFactor(frame, size);
+    final scale = twinScaleFactor(
+      frame,
+      size,
+      layoutOverrides: layoutPositions,
+    );
     _paintLayers(canvas, size, center, scale);
     _paintLinks(canvas, size, center, scale);
     _paintHosts(canvas, size, center, scale);
@@ -2381,14 +2370,16 @@ class _TwinScenePainter extends CustomPainter {
   void _paintGrid(Canvas canvas, Size size) {
     final horizon = size.height * 0.35;
     final skyRect = Rect.fromLTWH(0, 0, size.width, horizon);
-    final floorRect = Rect.fromLTWH(0, horizon, size.width, size.height - horizon);
+    final floorRect = Rect.fromLTWH(
+      0,
+      horizon,
+      size.width,
+      size.height - horizon,
+    );
 
     final skyPaint = Paint()
       ..shader = const LinearGradient(
-        colors: [
-          Color(0xFF070E18),
-          Color(0xFF0A1524),
-        ],
+        colors: [Color(0xFF070E18), Color(0xFF0A1524)],
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
       ).createShader(skyRect);
@@ -2396,10 +2387,7 @@ class _TwinScenePainter extends CustomPainter {
 
     final floorPaint = Paint()
       ..shader = const LinearGradient(
-        colors: [
-          Color(0xFF051627),
-          Color(0xFF041019),
-        ],
+        colors: [Color(0xFF051627), Color(0xFF041019)],
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
       ).createShader(floorRect);
@@ -2424,24 +2412,13 @@ class _TwinScenePainter extends CustomPainter {
       final y = ui.lerpDouble(size.height, horizon + 40, t)!;
       final left = ui.lerpDouble(-size.width * 0.1, size.width * 0.2, t)!;
       final right = ui.lerpDouble(size.width * 1.1, size.width * 0.8, t)!;
-      canvas.drawLine(
-        Offset(left, y),
-        Offset(right, y),
-        linePaint,
-      );
+      canvas.drawLine(Offset(left, y), Offset(right, y), linePaint);
     }
   }
 
-  void _paintLayers(
-    Canvas canvas,
-    Size size,
-    Offset center,
-    double scale,
-  ) {
+  void _paintLayers(Canvas canvas, Size size, Offset center, double scale) {
     final layers = <int, List<TwinHost>>{};
-    final allTiers = tierPalette.isEmpty
-        ? {0, 1, 2, 3}
-        : tierPalette;
+    final allTiers = tierPalette.isEmpty ? {0, 1, 2, 3} : tierPalette;
     for (final host in frame.hosts) {
       final layerIndex =
           tierAssignments[host.hostname] ?? _resolveNetworkTier(host);
@@ -2468,8 +2445,7 @@ class _TwinScenePainter extends CustomPainter {
             (layoutPositions[hosts.first.hostname] ?? hosts.first.position).z;
         maxZ = minZ;
         for (final host in hosts) {
-          final viewPosition =
-              layoutPositions[host.hostname] ?? host.position;
+          final viewPosition = layoutPositions[host.hostname] ?? host.position;
           minX = math.min(minX, viewPosition.x);
           maxX = math.max(maxX, viewPosition.x);
           minZ = math.min(minZ, viewPosition.z);
@@ -2512,14 +2488,10 @@ class _TwinScenePainter extends CustomPainter {
         canvas.drawPath(face, sidePaint);
       }
       final topPaint = Paint()
-        ..shader = ui.Gradient.linear(
-          top[0],
-          top[2],
-          [
-            Colors.white.withValues(alpha: 0.08 * alphaScale),
-            Colors.tealAccent.withValues(alpha: 0.05 * alphaScale),
-          ],
-        );
+        ..shader = ui.Gradient.linear(top[0], top[2], [
+          Colors.white.withValues(alpha: 0.08 * alphaScale),
+          Colors.tealAccent.withValues(alpha: 0.05 * alphaScale),
+        ]);
       final topPath = Path()..addPolygon(top, true);
       canvas.drawPath(topPath, topPaint);
       canvas.drawPath(
@@ -2539,9 +2511,7 @@ class _TwinScenePainter extends CustomPainter {
         text: TextSpan(
           text: 'L$layer',
           style: TextStyle(
-            color: Colors.white.withValues(
-              alpha: highlighted ? 0.85 : 0.35,
-            ),
+            color: Colors.white.withValues(alpha: highlighted ? 0.85 : 0.35),
             fontWeight: FontWeight.w700,
             fontSize: 12,
             letterSpacing: 0.5,
@@ -2573,23 +2543,12 @@ class _TwinScenePainter extends CustomPainter {
     ];
     return corners
         .map(
-          (position) => twinProjectPoint(
-            position,
-            center,
-            scale,
-            _cameraFocus,
-          ),
+          (position) => twinProjectPoint(position, center, scale, _cameraFocus),
         )
         .toList(growable: false);
   }
 
-
-  void _paintLinks(
-    Canvas canvas,
-    Size size,
-    Offset center,
-    double scale,
-  ) {
+  void _paintLinks(Canvas canvas, Size size, Offset center, double scale) {
     final hosts = {for (final host in frame.hosts) host.hostname: host};
 
     for (final link in frame.links) {
@@ -2641,8 +2600,7 @@ class _TwinScenePainter extends CustomPainter {
       }
 
       final slackPaint = Paint()
-        ..color = Colors.tealAccent
-            .withValues(alpha: (1 - utilization) * 0.12)
+        ..color = Colors.tealAccent.withValues(alpha: (1 - utilization) * 0.12)
         ..strokeWidth = 8
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round;
@@ -2656,7 +2614,8 @@ class _TwinScenePainter extends CustomPainter {
         ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 12);
       canvas.drawPath(path, baseGlow);
 
-      final highlight = focusedTier == null ||
+      final highlight =
+          focusedTier == null ||
           focusedTier == tierAssignments[source.hostname] ||
           focusedTier == tierAssignments[target.hostname];
       final opacityScale = highlight ? 1.0 : 0.1;
@@ -2737,8 +2696,9 @@ class _TwinScenePainter extends CustomPainter {
       final sourceDescriptor = _formatInterfaceDescriptor(source, true);
       final targetDescriptor = _formatInterfaceDescriptor(target, false);
       final measuredLabel = _formatThroughputLabel(measured);
-      final capacityLabel =
-          capacity > 0 ? _formatThroughputLabel(capacity) : null;
+      final capacityLabel = capacity > 0
+          ? _formatThroughputLabel(capacity)
+          : null;
       final bandwidthLabel = capacityLabel != null
           ? '$measuredLabel / $capacityLabel'
           : measuredLabel;
@@ -2762,12 +2722,7 @@ class _TwinScenePainter extends CustomPainter {
     }
   }
 
-  void _paintHosts(
-    Canvas canvas,
-    Size size,
-    Offset center,
-    double scale,
-  ) {
+  void _paintHosts(Canvas canvas, Size size, Offset center, double scale) {
     for (final host in frame.hosts) {
       final projection = projections[host.hostname];
       if (projection == null) continue;
@@ -2806,8 +2761,7 @@ class _TwinScenePainter extends CustomPainter {
       }
 
       final radius = hostBubbleRadius(host);
-      final form =
-          formOverrides[host.hostname] ?? _resolveDeviceForm(host);
+      final form = formOverrides[host.hostname] ?? _resolveDeviceForm(host);
       _drawDeviceForm(
         canvas: canvas,
         position: basePosition,
@@ -2850,8 +2804,7 @@ class _TwinScenePainter extends CustomPainter {
         )..layout(maxWidth: 160);
         textPainter.paint(
           canvas,
-          labelAnchor +
-              Offset(-textPainter.width / 2, -textPainter.height - 6),
+          labelAnchor + Offset(-textPainter.width / 2, -textPainter.height - 6),
         );
       }
     }
@@ -2930,14 +2883,10 @@ class _TwinScenePainter extends CustomPainter {
 
     final top = Path()..addPolygon(topPoints, true);
     final topPaint = Paint()
-      ..shader = ui.Gradient.radial(
-        position,
-        radius * 1.4,
-        [
-          Colors.white.withValues(alpha: 0.95),
-          color.withValues(alpha: 0.75),
-        ],
-      );
+      ..shader = ui.Gradient.radial(position, radius * 1.4, [
+        Colors.white.withValues(alpha: 0.95),
+        color.withValues(alpha: 0.75),
+      ]);
     canvas.drawPath(top, topPaint);
     if (isSelected) {
       canvas.drawPath(
@@ -2966,14 +2915,10 @@ class _TwinScenePainter extends CustomPainter {
     );
     final rect = RRect.fromRectAndRadius(baseRect, const Radius.circular(18));
     final paint = Paint()
-      ..shader = ui.Gradient.linear(
-        baseRect.topLeft,
-        baseRect.bottomRight,
-        [
-          color.withValues(alpha: 0.65),
-          Colors.blueGrey.withValues(alpha: 0.4),
-        ],
-      );
+      ..shader = ui.Gradient.linear(baseRect.topLeft, baseRect.bottomRight, [
+        color.withValues(alpha: 0.65),
+        Colors.blueGrey.withValues(alpha: 0.4),
+      ]);
     canvas.drawRRect(rect, paint);
     final portPaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.5)
@@ -3014,10 +2959,7 @@ class _TwinScenePainter extends CustomPainter {
       ..shader = ui.Gradient.linear(
         Offset(position.dx, position.dy - radius),
         Offset(position.dx, position.dy + radius),
-        [
-          Colors.white.withValues(alpha: 0.9),
-          color.withValues(alpha: 0.6),
-        ],
+        [Colors.white.withValues(alpha: 0.9), color.withValues(alpha: 0.6)],
       );
     canvas.drawPath(path, paint);
     if (isSelected) {
@@ -3039,18 +2981,11 @@ class _TwinScenePainter extends CustomPainter {
   ) {
     final r = radius * 0.8;
     final paint = Paint()
-      ..shader = ui.Gradient.radial(
-        position,
-        r * 1.3,
-        [
-          color.withValues(alpha: 0.9),
-          Colors.blueGrey.withValues(alpha: 0.2),
-        ],
-      );
-    canvas.drawOval(
-      Rect.fromCircle(center: position, radius: r),
-      paint,
-    );
+      ..shader = ui.Gradient.radial(position, r * 1.3, [
+        color.withValues(alpha: 0.9),
+        Colors.blueGrey.withValues(alpha: 0.2),
+      ]);
+    canvas.drawOval(Rect.fromCircle(center: position, radius: r), paint);
     if (isSelected) {
       canvas.drawOval(
         Rect.fromCircle(center: position, radius: r + 4),
@@ -3077,10 +3012,7 @@ class _TwinScenePainter extends CustomPainter {
       ..shader = ui.Gradient.linear(
         Offset(position.dx, position.dy - radius),
         Offset(position.dx, position.dy + radius),
-        [
-          color.withValues(alpha: 0.8),
-          Colors.blueGrey.withValues(alpha: 0.2),
-        ],
+        [color.withValues(alpha: 0.8), Colors.blueGrey.withValues(alpha: 0.2)],
       );
     canvas.drawPath(path, paint);
     if (isSelected) {
@@ -3111,8 +3043,12 @@ class _TwinScenePainter extends CustomPainter {
       oldDelegate.cameraTo != cameraTo;
 }
 
-double twinScaleFactor(TwinStateFrame frame, Size size) {
-  final radius = frame.maxRadius;
+double twinScaleFactor(
+  TwinStateFrame frame,
+  Size size, {
+  Map<String, TwinPosition>? layoutOverrides,
+}) {
+  final radius = _sceneRadius(frame, layoutOverrides);
   if (radius <= 0) return 1;
   const margin = 64.0;
   final shortest = size.shortestSide;
@@ -3120,6 +3056,28 @@ double twinScaleFactor(TwinStateFrame frame, Size size) {
     return 1;
   }
   return ((shortest / 2) - margin) / radius;
+}
+
+double _sceneRadius(
+  TwinStateFrame frame,
+  Map<String, TwinPosition>? overrides,
+) {
+  if (frame.hosts.isEmpty) {
+    return 1;
+  }
+  double maxRadius = 1;
+  for (final host in frame.hosts) {
+    final position = overrides != null && overrides[host.hostname] != null
+        ? overrides[host.hostname]!
+        : host.position;
+    final distance = math.sqrt(
+      position.x * position.x + position.z * position.z,
+    );
+    if (distance > maxRadius) {
+      maxRadius = distance;
+    }
+  }
+  return maxRadius;
 }
 
 Offset twinProjectPoint(
@@ -3346,9 +3304,12 @@ int _resolveNetworkTier(TwinHost host) {
 }
 
 HostDeviceForm _resolveDeviceForm(TwinHost host) {
-  final tags = host.diagnostics.tags.map((k, v) => MapEntry(k.toLowerCase(), v.toLowerCase()));
+  final tags = host.diagnostics.tags.map(
+    (k, v) => MapEntry(k.toLowerCase(), v.toLowerCase()),
+  );
   String descriptor = '';
-  descriptor = tags['device'] ??
+  descriptor =
+      tags['device'] ??
       tags['type'] ??
       host.hardware.systemModel?.toLowerCase() ??
       host.platform.toLowerCase();
@@ -3358,10 +3319,14 @@ HostDeviceForm _resolveDeviceForm(TwinHost host) {
   if (descriptor.contains('gateway') || descriptor.contains('wan')) {
     return HostDeviceForm.gateway;
   }
-  if (descriptor.contains('pi') || descriptor.contains('sensor') || descriptor.contains('edge')) {
+  if (descriptor.contains('pi') ||
+      descriptor.contains('sensor') ||
+      descriptor.contains('edge')) {
     return HostDeviceForm.sensor;
   }
-  if (descriptor.contains('laptop') || descriptor.contains('client') || descriptor.contains('desktop')) {
+  if (descriptor.contains('laptop') ||
+      descriptor.contains('client') ||
+      descriptor.contains('desktop')) {
     return HostDeviceForm.client;
   }
   return HostDeviceForm.server;
@@ -5152,15 +5117,9 @@ class _TierButton extends StatelessWidget {
       tooltip: '계층 선택',
       onSelected: onChanged,
       itemBuilder: (context) => [
-        const PopupMenuItem<int?>(
-          value: null,
-          child: Text('모든 계층'),
-        ),
+        const PopupMenuItem<int?>(value: null, child: Text('모든 계층')),
         ...tiers.map(
-          (tier) => PopupMenuItem<int?>(
-            value: tier,
-            child: Text('L$tier'),
-          ),
+          (tier) => PopupMenuItem<int?>(value: tier, child: Text('L$tier')),
         ),
       ],
       child: Container(
@@ -5359,11 +5318,7 @@ class _DeviceIconMarker extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0x5500C2FF)),
       ),
-      child: Icon(
-        _iconForForm(form),
-        size: size * 0.6,
-        color: Colors.white,
-      ),
+      child: Icon(_iconForForm(form), size: size * 0.6, color: Colors.white),
     );
   }
 
