@@ -3727,6 +3727,7 @@ class _DiskUsageBar extends StatelessWidget {
   }
 }
 
+/// 네트워크 인터페이스 배지를 나열한다.
 class _InterfaceBadgeBar extends StatelessWidget {
   const _InterfaceBadgeBar({required this.interfaces});
 
@@ -3778,6 +3779,7 @@ String _formatInterfaceSpeed(TwinInterfaceStats? iface) {
   return '${speed.toStringAsFixed(0)} Mbps';
 }
 
+/// 상위 프로세스를 페이지 단위로 보여주는 패널.
 class _ProcessPanel extends StatefulWidget {
   const _ProcessPanel({required this.host});
 
@@ -3911,6 +3913,7 @@ class _InterfacePanel extends StatelessWidget {
   }
 }
 
+/// 스토리지 사용량을 페이지 단위로 보여주는 패널.
 class _StoragePanel extends StatefulWidget {
   const _StoragePanel({required this.host});
 
@@ -4016,6 +4019,7 @@ class _StoragePanelState extends State<_StoragePanel> {
 const int _kDockColumns = 4;
 const int _kDockRows = 13;
 
+/// 초기 도킹 레이아웃 시드.
 const List<_WidgetPlacementSeed> _defaultDockPlacements = [
   _WidgetPlacementSeed(
     type: SidebarWidgetType.globalMetrics,
