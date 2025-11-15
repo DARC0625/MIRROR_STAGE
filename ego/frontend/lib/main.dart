@@ -3273,6 +3273,7 @@ String _formatBytes(double? bytes) {
   return '${bytes.toStringAsFixed(0)} B';
 }
 
+/// Duration 값을 `Xd Xh Xm` 형식의 문자열로 변환한다.
 String _formatDuration(Duration duration) {
   final days = duration.inDays;
   final hours = duration.inHours % 24;
@@ -3288,6 +3289,7 @@ String _formatDuration(Duration duration) {
   return parts.join(' ');
 }
 
+/// 바이트 단위를 사람이 읽기 좋은 GB 문자열로 포맷한다.
 String _formatCapacity(double? bytes) {
   if (bytes == null || bytes <= 0) return '정보 없음';
   const giga = 1024 * 1024 * 1024;
@@ -3296,6 +3298,7 @@ String _formatCapacity(double? bytes) {
   return '${gb.toStringAsFixed(decimals)} GB';
 }
 
+/// 여러 디스크 정보를 간단한 텍스트로 요약한다.
 String _summarizeDisks(List<TwinDiskUsage> disks) {
   if (disks.isEmpty) {
     return '데이터 없음';
@@ -3314,6 +3317,7 @@ String _summarizeDisks(List<TwinDiskUsage> disks) {
   return '${disks.length} vols · $capacity';
 }
 
+/// 첫 번째 활성 NIC 정보를 `NAME · 속도` 형식으로 반환.
 String _formatInterfaceSummary(List<TwinInterfaceStats> interfaces) {
   if (interfaces.isEmpty) return '데이터 없음';
   TwinInterfaceStats? primary;
@@ -3327,6 +3331,7 @@ String _formatInterfaceSummary(List<TwinInterfaceStats> interfaces) {
   return '${primary.name} · ${_formatInterfaceSpeed(primary)}';
 }
 
+/// Gbps 값을 KB/MB/GB 단위 문자열로 자동 변환한다.
 String _formatThroughputLabel(double valueGbps) {
   if (valueGbps.isNaN || valueGbps <= 0) {
     return '0 bps';
@@ -3352,6 +3357,7 @@ String _formatThroughputLabel(double valueGbps) {
       : '0 bps';
 }
 
+/// 호스트의 태그/위치 정보를 기반으로 OSI 계층을 추정한다.
 int _resolveNetworkTier(TwinHost host) {
   final tags = host.diagnostics.tags;
   final candidates = [
@@ -3375,6 +3381,7 @@ int _resolveNetworkTier(TwinHost host) {
   return _tierLevel((host.position.y / _tierHostElevation).round());
 }
 
+/// 태그/모델명을 기준으로 장비 타입을 추론한다.
 HostDeviceForm _resolveDeviceForm(TwinHost host) {
   final tags = host.diagnostics.tags.map(
     (k, v) => MapEntry(k.toLowerCase(), v.toLowerCase()),
@@ -3404,6 +3411,7 @@ HostDeviceForm _resolveDeviceForm(TwinHost host) {
   return HostDeviceForm.server;
 }
 
+/// HostDeviceForm 을 한국어 라벨로 변환.
 String _formLabel(HostDeviceForm form) {
   switch (form) {
     case HostDeviceForm.server:
@@ -3419,6 +3427,7 @@ String _formLabel(HostDeviceForm form) {
   }
 }
 
+/// 호스트 메모리 사용량 서브타이틀 텍스트 생성.
 String? _formatHostMemorySubtitle(TwinHost host) {
   final usedBytes = host.memoryUsedBytes;
   final totalBytes = host.memoryTotalBytes;
@@ -3768,6 +3777,7 @@ TwinInterfaceStats? _primaryInterface(TwinHost host) {
       : null;
 }
 
+/// 링크 라벨에 사용할 ` 호스트 / NIC · 속도` 문자열 생성.
 String _formatInterfaceDescriptor(TwinHost host, bool isSource) {
   final iface = _primaryInterface(host);
   final name = iface?.name ?? (isSource ? 'SOURCE' : 'TARGET');
@@ -3775,6 +3785,7 @@ String _formatInterfaceDescriptor(TwinHost host, bool isSource) {
   return '${host.displayName} / $name · $speed';
 }
 
+/// NIC 속도 Mbps 값을 문자열로 변환.
 String _formatInterfaceSpeed(TwinInterfaceStats? iface) {
   final speed = iface?.speedMbps;
   if (speed == null || !speed.isFinite || speed <= 0) {
@@ -5530,6 +5541,7 @@ class _DeviceIconMarker extends StatelessWidget {
 }
 
 /// 도킹 그리드 위 떨어뜨릴 위치의 가이드 박스.
+/// 도킹 위치에 허용/불가 상태를 표시하는 사각 가이드.
 class _DropIndicator {
   const _DropIndicator({
     required this.column,
