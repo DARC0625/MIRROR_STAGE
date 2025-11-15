@@ -137,10 +137,9 @@ python -m agent.main --config config.json  # 백그라운드 실행 시 systemd/
 
 ## 패키징 및 배포
 - `packaging/install-mirror-stage-ego.ps1`: Windows에서 실행되는 주 설치 스크립트. `%LOCALAPPDATA%\MIRROR_STAGE\tools` 아래에 Node/Flutter SDK를 내려받아 `npm ci → npm run build → flutter build web` 순으로 빌드하고 런처(`start_ego.ps1`)를 구성한다.
-- `packaging/msix/build_msix.ps1`: MSIX 패키지 레이아웃을 생성한다. 스크립트는 .NET 기반 부트스트랩퍼(`packaging/bootstrapper/`)를 빌드해 포함하고, 리포지토리의 `ego/`·`assets/`·`install` 스크립트를 레이아웃으로 복사한다. `makeappx.exe`와 `signtool.exe`를 이용해 서명된 `.msix`를 만든 뒤 WinGet 매니페스트로 배포할 수 있다.
-- **코드 서명**: GitHub Actions에서 자동으로 서명하려면 PFX 인증서를 Base64 인코딩해 `SIGNING_CERT_B64`, 암호를 `SIGNING_CERT_PASSWORD` 시크릿으로 등록한다. 로컬에서 테스트할 때는 `signtool sign /fd SHA256 /f <cert.pfx> /p <password> MirrorStage.Ego_*.msix`로 서명하고, 자체 서명 인증서를 사용할 경우 신뢰 루트/게시자 저장소에 미리 설치해야 한다.
-- `packaging/launcher/`: 전용 Windows 런처(EXE). 런처 하나로 EGO/REFLECTOR 설치를 모두 수행한다. 런처는 최신 GitHub Release에서 대상 번들(`mirror-stage-ego-bundle.zip`, `mirror-stage-reflector-bundle.zip`)을 내려받아 설치 스크립트를 실행하고, 콘솔 로그를 UI에 실시간 표시한다. `dotnet publish packaging/launcher/MirrorStageLauncher.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`로 직접 빌드하거나, [Mirror Stage Launcher 다운로드](https://github.com/DARC0625/MIRROR_STAGE/releases/latest/download/mirror-stage-launcher.zip)를 받아 `MirrorStageLauncher.exe`를 실행하면 된다.
-- Release에는 EGO/REFLECTOR 설치용 번들`mirror-stage-ego-bundle.zip`, `mirror-stage-reflector-bundle.zip`과 런처/ MSIX 패키지가 함께 올라간다. 런처는 최신 릴리스 정보를 자동으로 불러와 “설치 / 업데이트” 버튼만으로 설치가 가능하다.
+- `packaging/bundle/build_module_bundles.ps1`: EGO와 REFLECTOR를 각각 설치할 수 있는 번들(zip)을 생성한다. GitHub Actions가 자동으로 실행해 `mirror-stage-ego-bundle.zip`, `mirror-stage-reflector-bundle.zip`을 release asset으로 올린다.
+- `packaging/launcher/`: 전용 Windows 런처(EXE). 런처 하나로 EGO/REFLECTOR 설치를 모두 수행한다. 최신 릴리스에서 대상 번들을 내려받아 설치 스크립트를 자동 실행하고, 로그를 GUI에 실시간 표시한다. `dotnet publish packaging/launcher/MirrorStageLauncher.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`로 직접 빌드하거나, [Mirror Stage Launcher 다운로드](https://github.com/DARC0625/MIRROR_STAGE/releases/latest/download/mirror-stage-launcher.zip)를 받아 `MirrorStageLauncher.exe`를 실행하면 된다.
+- Release에는 `mirror-stage-launcher.zip`과 두 개의 번들이 포함된다. 사용자는 런처만 다운받아 설치/업데이트를 수행하거나, 번들을 수동으로 내려받아 PowerShell 스크립트를 직접 실행할 수도 있다.
 - WinGet/기업 배포 파이프라인에서는 `build_msix.ps1 -Pack`으로 생성된 MSIX를 업로드하고, WinGet 매니페스트만 작성하면 된다. 필요 시 기존 PowerShell 스크립트만 별도로 실행해 조용히 설치할 수도 있다.
 
 ## 향후 정비 포인트 (현재 코드 기반)
