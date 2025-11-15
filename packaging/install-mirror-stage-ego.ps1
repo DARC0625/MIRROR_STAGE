@@ -6,9 +6,87 @@ Param(
     [string]$ProgressLogPath
 )
 
+$script:TargetFlutterVersion = "3.35.7"
+
 function Ensure-Directory([string]$Path) {
     if (-not (Test-Path $Path)) {
         New-Item -ItemType Directory -Path $Path | Out-Null
+    }
+}
+
+function Resolve-GitHubArchiveUrl {
+    param(
+        [string]$RepoUrl,
+        [string]$Branch
+    )
+
+    $pattern = [regex]'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/\.]+)(?:\.git)?$'
+    $match = $pattern.Match($RepoUrl)
+    if (-not $match.Success) {
+        return $null
+    }
+    $owner = $match.Groups['owner'].Value
+    $repo = $match.Groups['repo'].Value
+    return "https://github.com/$owner/$repo/archive/refs/heads/$Branch.zip"
+}
+
+function Sync-RepositorySource {
+    param(
+        [string]$TargetDir,
+        [string]$RepoUrl,
+        [string]$Branch,
+        [switch]$Force
+    )
+
+    $backendMarker = Join-Path $TargetDir "backend\package.json"
+    $frontendMarker = Join-Path $TargetDir "frontend\pubspec.yaml"
+    $sourceReady = (Test-Path $backendMarker) -and (Test-Path $frontendMarker)
+
+    if ($sourceReady -and -not $Force) {
+        Write-Log "[Installer] Using packaged source under $TargetDir." ([ConsoleColor]::DarkGray)
+        return
+    }
+
+    Write-Log "[Installer] Syncing repository from $RepoUrl (branch: $Branch)" ([ConsoleColor]::DarkGray)
+    if (Test-Path $TargetDir) {
+        try {
+            Remove-Item -Path $TargetDir -Recurse -Force -ErrorAction Stop
+        } catch {
+            Write-Log "[Installer] Warning: failed to clear $TargetDir before sync: $_" ([ConsoleColor]::Yellow)
+        }
+    }
+    Ensure-Directory -Path $TargetDir
+
+    $gitExe = Get-Command git -ErrorAction SilentlyContinue
+    if ($gitExe) {
+        & $gitExe.Source clone --depth 1 --branch $Branch $RepoUrl $TargetDir >> $logFile 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Git clone failed (ExitCode: $LASTEXITCODE)"
+        }
+        Write-Log "[Installer] Repository cloned via git." ([ConsoleColor]::DarkGray)
+        return
+    }
+
+    $archiveUrl = Resolve-GitHubArchiveUrl -RepoUrl $RepoUrl -Branch $Branch
+    if (-not $archiveUrl) {
+        throw "Git is not installed and repository download URL could not be determined. Install Git or rerun the installer with source files bundled."
+    }
+
+    $tempId = [guid]::NewGuid().ToString("N")
+    $zipPath = Join-Path $env:TEMP ("mirror_stage_repo_$tempId.zip")
+    $extractDir = Join-Path $env:TEMP ("mirror_stage_repo_$tempId")
+    Download-File -Uri $archiveUrl -Destination $zipPath -Description "repository snapshot"
+    try {
+        Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+        $rootFolder = Get-ChildItem -Path $extractDir | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+        if (-not $rootFolder) {
+            throw "Repository archive was empty."
+        }
+        Copy-Item -Path (Join-Path $rootFolder.FullName '*') -Destination $TargetDir -Recurse -Force
+        Write-Log "[Installer] Repository synced via archive download." ([ConsoleColor]::DarkGray)
+    } finally {
+        Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -280,18 +358,21 @@ function Ensure-NodeRuntime {
     return @{ Node = $nodeExe; Npm = $npmCmd }
 }
 
-function Get-LatestFlutterRelease {
+function Get-FlutterRelease {
+    param(
+        [string]$Version
+    )
+
     $manifestUrl = "https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json"
     Write-Log "[Installer] Fetching Flutter release manifest" ([ConsoleColor]::DarkGray)
     $manifest = Invoke-RestMethod -Uri $manifestUrl -ErrorAction Stop
-    $stableHash = $manifest.current_release.stable
-    $release = $manifest.releases | Where-Object { $_.hash -eq $stableHash -and $_.dart_sdk_arch -eq "x64" } | Select-Object -First 1
+    $release = $manifest.releases | Where-Object { $_.version -eq $Version -and $_.dart_sdk_arch -eq "x64" } | Select-Object -First 1
     if (-not $release) {
-        throw "Unable to determine latest stable Flutter release."
+        throw "Unable to find Flutter release $Version in manifest."
     }
     $archiveUrl = "https://storage.googleapis.com/flutter_infra_release/releases/$($release.archive)"
     return @{
-        Version = $release.version
+        Version = $Version
         ArchiveUrl = $archiveUrl
         ArchiveName = Split-Path -Leaf $release.archive
     }
@@ -303,7 +384,7 @@ function Ensure-FlutterSdk {
     )
 
     Write-Log "[Installer] Ensuring Flutter SDK under $ToolsDir" ([ConsoleColor]::DarkGray)
-    $minimumFlutter = [Version]"3.35.7"
+    $minimumFlutter = [Version]$script:TargetFlutterVersion
     $systemFlutter = Try-UseSystemFlutter -MinimumVersion $minimumFlutter
     if ($systemFlutter) {
         return @{ Flutter = $systemFlutter.Flutter; Version = $systemFlutter.Version }
@@ -313,7 +394,7 @@ function Ensure-FlutterSdk {
     $flutterExe = Join-Path $flutterDir "bin\flutter.bat"
     $versionMarker = Join-Path $flutterDir "MIRROR_STAGE_VERSION.txt"
 
-    $release = Get-LatestFlutterRelease
+    $release = Get-FlutterRelease -Version $script:TargetFlutterVersion
 
     $flutterExists = Test-Path $flutterExe
     $versionFileExists = Test-Path $versionMarker
@@ -334,9 +415,21 @@ function Ensure-FlutterSdk {
         }
     }
     if ($flutterExists -and $currentVersion) {
-        if ($currentVersion -eq $release.Version) {
-            Write-Log "[Installer] Flutter $currentVersion already provisioned." ([ConsoleColor]::DarkGray)
-            return @{ Flutter = $flutterExe; Version = $currentVersion }
+        $parsedCurrent = $null
+        try {
+            $parsedCurrent = [Version]$currentVersion
+        } catch {
+            $parsedCurrent = $null
+        }
+        $targetVersion = [Version]$release.Version
+        if ($parsedCurrent -and $parsedCurrent -ge $targetVersion) {
+            if ($parsedCurrent -gt $targetVersion) {
+                Write-Log "[Installer] Detected newer Flutter SDK ($parsedCurrent). Reusing." ([ConsoleColor]::DarkGray)
+            } else {
+                Write-Log "[Installer] Flutter $currentVersion already provisioned." ([ConsoleColor]::DarkGray)
+            }
+            Set-Content -Path $versionMarker -Value $parsedCurrent.ToString()
+            return @{ Flutter = $flutterExe; Version = $parsedCurrent }
         }
         Write-Log "[Installer] Flutter version mismatch ($currentVersion -> $($release.Version)). Refreshing SDK." ([ConsoleColor]::Yellow)
     }
@@ -667,18 +760,7 @@ try {
 
     Ensure-Elevation
 
-    if ($ForceRepoSync) {
-        Write-Log "[Installer] Force syncing repository from $RepoUrl ($Branch)" ([ConsoleColor]::Yellow)
-        $gitExe = Get-Command git -ErrorAction SilentlyContinue
-        if (-not $gitExe) {
-            throw "Git executable not found. Install Git (winget install Git.Git) or rerun the installer without -ForceRepoSync."
-        }
-        if (Test-Path $egoRoot) {
-            Remove-Item -Path $egoRoot -Recurse -Force
-        }
-        & $gitExe.Source clone --branch $Branch $RepoUrl $egoRoot >> $logFile 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "Git clone failed" }
-    }
+    Sync-RepositorySource -TargetDir $egoRoot -RepoUrl $RepoUrl -Branch $Branch -Force:$ForceRepoSync
 
     if (-not (Test-Path $backendDir) -or -not (Test-Path (Join-Path $backendDir "package.json"))) {
         throw "Backend directory is missing from the installer payload. Re-run setup or download the latest installer."
