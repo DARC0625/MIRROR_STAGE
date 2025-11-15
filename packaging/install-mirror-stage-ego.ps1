@@ -317,8 +317,23 @@ function Ensure-FlutterSdk {
 
     $flutterExists = Test-Path $flutterExe
     $versionFileExists = Test-Path $versionMarker
-    if ($flutterExists -and $versionFileExists) {
+    $currentVersion = $null
+    if ($versionFileExists) {
         $currentVersion = Get-Content $versionMarker -ErrorAction SilentlyContinue
+    }
+    if (-not $currentVersion -and $flutterExists) {
+        try {
+            $versionOutput = (& $flutterExe --version) -join "`n"
+            $match = [regex]::Match($versionOutput, 'Flutter\s+(\d+\.\d+\.\d+)')
+            if ($match.Success) {
+                $currentVersion = $match.Groups[1].Value
+                Write-Log "[Installer] Detected Flutter $currentVersion via flutter --version (marker missing)." ([ConsoleColor]::DarkGray)
+            }
+        } catch {
+            Write-Log "[Installer] Existing Flutter found but version could not be read: $_" ([ConsoleColor]::Yellow)
+        }
+    }
+    if ($flutterExists -and $currentVersion) {
         if ($currentVersion -eq $release.Version) {
             Write-Log "[Installer] Flutter $currentVersion already provisioned." ([ConsoleColor]::DarkGray)
             return @{ Flutter = $flutterExe; Version = $currentVersion }
