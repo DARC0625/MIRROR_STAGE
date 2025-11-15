@@ -5471,6 +5471,7 @@ class _DockDragPayload {
   final int heightUnits;
 }
 
+/// 맵 위에 표시되는 장비 아이콘 마커.
 class _DeviceIconMarker extends StatelessWidget {
   const _DeviceIconMarker({this.assetPath, required this.form});
 
@@ -5524,6 +5525,7 @@ class _DeviceIconMarker extends StatelessWidget {
   }
 }
 
+/// 도킹 그리드 위 떨어뜨릴 위치의 가이드 박스.
 class _DropIndicator {
   const _DropIndicator({
     required this.column,
