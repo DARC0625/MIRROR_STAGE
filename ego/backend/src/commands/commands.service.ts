@@ -5,12 +5,18 @@ import { Subject } from 'rxjs';
 import { CommandEntity, CommandStatus } from './command.entity';
 import { CreateCommandDto, CommandResultDto, ListCommandsQueryDto } from './commands.dto';
 
+/**
+ * 에이전트에게 전달할 명령 페이로드 (실행 대기 상태).
+ */
 export interface PendingCommandPayload {
   id: string;
   command: string;
   timeoutSeconds: number | null;
 }
 
+/**
+ * 명령 상태가 변경될 때 실시간 브로드캐스트되는 이벤트.
+ */
 export interface CommandUpdateEvent {
   id: string;
   hostname: string;
@@ -20,6 +26,12 @@ export interface CommandUpdateEvent {
   stderr?: string | null;
 }
 
+/**
+ * 명령 큐/이력 관리를 담당하는 서비스.
+ * - 명령 작성/수행/결과 저장
+ * - 페이징 API 지원
+ * - RxJS Subject 로 실시간 상태 스트림 제공
+ */
 @Injectable()
 export class CommandsService {
   private readonly updatesSubject = new Subject<CommandUpdateEvent>();
@@ -30,6 +42,7 @@ export class CommandsService {
     private readonly commandsRepository: Repository<CommandEntity>,
   ) {}
 
+  /** 새 명령을 생성하고 pending 상태로 큐에 넣는다. */
   async createCommand(dto: CreateCommandDto): Promise<CommandEntity> {
     const command = this.commandsRepository.create({
       hostname: dto.hostname,
@@ -43,6 +56,10 @@ export class CommandsService {
     return saved;
   }
 
+  /**
+   * 특정 호스트가 가져갈 pending 명령 목록을 반환한다.
+   * 반환 시 running 으로 전환하여 중복 실행을 방지한다.
+   */
   async getPendingCommands(hostname: string, limit = 5): Promise<PendingCommandPayload[]> {
     const pending = await this.commandsRepository.find({
       where: { hostname, status: 'pending' },
@@ -68,6 +85,9 @@ export class CommandsService {
     }));
   }
 
+  /**
+   * 에이전트가 전달한 명령 실행 결과를 저장한다.
+   */
   async submitResult(id: string, dto: CommandResultDto): Promise<CommandEntity> {
     const command = await this.commandsRepository.findOne({ where: { id } });
     if (!command) {
@@ -84,6 +104,9 @@ export class CommandsService {
     return command;
   }
 
+  /**
+   * 필터/검색 조건에 따라 명령 이력을 페이지 단위로 반환한다.
+   */
   async paginateCommands(query: ListCommandsQueryDto) {
     const qb = this.commandsRepository.createQueryBuilder('command').orderBy('command.requestedAt', 'DESC');
 
@@ -110,6 +133,7 @@ export class CommandsService {
     };
   }
 
+  /** 상태 변경을 updates$ 스트림으로 흘려보낸다. */
   private publishUpdate(command: CommandEntity): void {
     this.updatesSubject.next({
       id: command.id,

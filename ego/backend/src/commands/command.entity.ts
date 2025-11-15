@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Update
 
 export type CommandStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'timeout';
 
+/** 명령 큐를 나타내는 TypeORM Entity */
 @Entity({ name: 'commands' })
 @Index(['hostname', 'status'])
 export class CommandEntity {
