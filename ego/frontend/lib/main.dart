@@ -927,6 +927,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
     Curves.easeOutCubic.transform(_cameraController.value),
   );
 
+  /// 현재 배치된 모든 호스트의 중심점을 계산한다.
   TwinPosition _sceneCentroid() {
     if (widget.layoutPositions.isEmpty) {
       return TwinPosition.zero;
@@ -943,6 +944,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
     return TwinPosition(x: sumX / count, y: sumY / count, z: sumZ / count);
   }
 
+  /// 뷰포트 밖으로 나가지 않도록 팬 오프셋을 제한한다.
   Offset _clampPan(Offset candidate) {
     final size = _viewportSize;
     if (size == null) return candidate;
@@ -955,6 +957,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
   }
 
   @override
+  /// 팬/줌 제스처와 도크를 포함한 전체 스테이지를 렌더링한다.
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1043,6 +1046,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
     );
   }
 
+  /// 호스트 편집 모달을 띄워 폼/아이콘을 수정한다.
   void _handleEditRequest(TwinHost host) {
     final currentForm =
         widget.formOverrides[host.hostname] ?? _resolveDeviceForm(host);
