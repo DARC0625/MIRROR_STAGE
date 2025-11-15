@@ -74,7 +74,14 @@ $makeAppx = Get-Command makeappx.exe -ErrorAction SilentlyContinue
 if (-not $makeAppx) {
     throw "makeappx.exe not found. Install Windows SDK or omit -Pack."
 }
+$makeAppxPath = $makeAppx.Path
+if (-not $makeAppxPath) {
+    $makeAppxPath = $makeAppx.Definition
+}
 $sanitized = ($PackageName -replace '\\|\s', '')
 $msixPath = Join-Path $OutputDir ("{0}_{1}.msix" -f $sanitized, $Version)
-& $makeAppx.Source pack /d $layoutDir /p $msixPath | Out-Null
+& $makeAppxPath pack /d $layoutDir /p $msixPath
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $msixPath)) {
+    throw "makeappx.exe failed (exit $LASTEXITCODE). Check layout at $layoutDir."
+}
 Write-Host "[msix] Created package $msixPath" -ForegroundColor Green
