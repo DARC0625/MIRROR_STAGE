@@ -120,8 +120,13 @@ begin
     WizardForm.CancelButton.Enabled := False;
   end;
 
-  Cmd := Format('-NoProfile -ExecutionPolicy Bypass -File "%s" -InstallRoot "%s" -RepoUrl "%s" -Branch "%s" -ProgressLogPath "%s"',
-    [ExpandConstant('{tmp}\install-mirror-stage-ego.ps1'), ExpandConstant('{app}'), '{#MyRepoUrl}', '{#MyRepoBranch}', ProgressLogFile]);
+  Cmd :=
+    '-NoProfile -ExecutionPolicy Bypass' +
+    ' -File "' + ExpandConstant('{tmp}\install-mirror-stage-ego.ps1') + '"' +
+    ' -InstallRoot "' + ExpandConstant('{app}') + '"' +
+    ' -RepoUrl "{#MyRepoUrl}"' +
+    ' -Branch "{#MyRepoBranch}"' +
+    ' -ProgressLogPath "' + ProgressLogFile + '"';
 
   ProcessHandle := 0;
   try
