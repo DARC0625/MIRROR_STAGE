@@ -4901,6 +4901,7 @@ class _DockedWidgetTile extends StatelessWidget {
 }
 
 /// 드래그 핸들을 나타내는 아이콘.
+/// 드래그 가능한 위젯 모서리에 표시되는 그립 아이콘.
 class _DockGripIcon extends StatelessWidget {
   const _DockGripIcon();
 
@@ -4921,6 +4922,7 @@ class _DockGripIcon extends StatelessWidget {
 }
 
 /// 도킹 위젯이 호스트 선택이 필요한 경우 가드 레이어.
+/// 호스트가 선택되지 않았을 때 위젯을 비활성화하는 오버레이.
 class _DockHostGuard extends StatelessWidget {
   const _DockHostGuard({required this.message});
 
@@ -5317,6 +5319,7 @@ class _TierDock extends StatelessWidget {
 }
 
 /// 드래그 중인 호스트에 대한 메타데이터.
+/// 티어 도크 드래그 시 전달되는 페이로드.
 class _TierDragPayload {
   const _TierDragPayload({required this.hostname, required this.fromTier});
 
@@ -5433,6 +5436,7 @@ class _GridBackgroundPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+/// 도킹 그리드에서 위젯을 드래그할 때 사용되는 페이로드.
 class _DockDragPayload {
   const _DockDragPayload._({
     required this.type,
