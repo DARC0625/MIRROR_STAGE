@@ -12,6 +12,9 @@ Param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..' '..')
 $layoutDir = Join-Path $OutputDir 'layout'
+if (-not (Test-Path $OutputDir)) {
+    New-Item -ItemType Directory -Path $OutputDir | Out-Null
+}
 if (Test-Path $layoutDir) {
     Remove-Item -Path $layoutDir -Recurse -Force
 }

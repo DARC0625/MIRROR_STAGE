@@ -1,4 +1,4 @@
-name: Build MIRROR STAGE EGO Installer
+name: Build MIRROR STAGE EGO MSIX
 
 on:
   workflow_dispatch:
@@ -16,13 +16,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Compile installer
+      - name: Determine version
+        id: version
+        shell: pwsh
         run: |
-          choco install innosetup --yes --no-progress
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "packaging\ego-installer.iss"
+          if ($env:GITHUB_REF.StartsWith('refs/tags/ego-v')) {
+            $value = $env:GITHUB_REF.Replace('refs/tags/', '')
+          } else {
+            $value = "1.0.$($env:GITHUB_RUN_NUMBER)"
+          }
+          "msix_version=$value" >> $env:GITHUB_OUTPUT
 
-      - name: Upload installer artifact
+      - name: Build MSIX package
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.msix_version }}'
+          pwsh packaging/msix/build_msix.ps1 -Pack `
+            -PackageName "MirrorStage.Ego" `
+            -Version $version `
+            -Publisher "CN=DARC0625" `
+            -PublisherDisplayName "MIRROR STAGE" `
+            -DisplayName "MIRROR STAGE EGO" `
+            -Description "Digital twin HUD and command center"
+
+      - name: Upload MSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mirror-stage-ego-installer
-          path: packaging\Output\mirror-stage-ego-setup.exe
+          name: mirror-stage-ego-msix
+          path: packaging\msix\output\*.msix
