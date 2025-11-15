@@ -1247,6 +1247,7 @@ class _GaugePainter extends CustomPainter {
   final Color color;
 
   @override
+  /// 전체 장면(바닥, 계층, 링크, 호스트)을 순서대로 그린다.
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final radius = size.shortestSide / 2 - 12;
@@ -2254,6 +2255,7 @@ class _MetricSample {
 }
 
 /// 링크, 노드, 계층 판을 한번에 그리는 핵심 CustomPainter.
+/// 링크, 노드, 계층 판을 한번에 그리는 핵심 CustomPainter.
 class _TwinScenePainter extends CustomPainter {
   _TwinScenePainter(
     this.frame, {
@@ -2309,6 +2311,7 @@ class _TwinScenePainter extends CustomPainter {
     _paintHosts(canvas, size, sceneCenter, sceneScale);
   }
 
+  /// 바닥 그리드 및 원근감을 그린다.
   void _paintGrid(Canvas canvas, Size size, _SceneBounds bounds) {
     final horizon = size.height * 0.35;
     final skyRect = Rect.fromLTWH(0, 0, size.width, horizon);
@@ -2419,6 +2422,7 @@ class _TwinScenePainter extends CustomPainter {
     }
   }
 
+  /// OSI 계층 판을 시각화한다.
   void _paintLayers(
     Canvas canvas,
     _SceneBounds bounds,
@@ -2556,6 +2560,7 @@ class _TwinScenePainter extends CustomPainter {
         .toList(growable: false);
   }
 
+  /// 호스트 간 링크를 곡선 경로로 그린다.
   void _paintLinks(Canvas canvas, Size size, Offset center, double scale) {
     final hosts = {for (final host in frame.hosts) host.hostname: host};
 
@@ -2730,6 +2735,7 @@ class _TwinScenePainter extends CustomPainter {
     }
   }
 
+  /// 각 호스트 노드를 도형/텍스트로 렌더링한다.
   void _paintHosts(Canvas canvas, Size size, Offset center, double scale) {
     for (final host in frame.hosts) {
       final projection = projections[host.hostname];
