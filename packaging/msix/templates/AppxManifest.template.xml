@@ -21,7 +21,7 @@
     <Application Id="MirrorStageEgo"
                  Executable="MirrorStageBootstrapper.exe"
                  EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements DisplayName="__DISPLAY_NAME__" Square150x150Logo="Assets/Square150x150Logo.png" Square44x44Logo="Assets/Square44x44Logo.png" Description="__DESCRIPTION__">
+      <uap:VisualElements DisplayName="__DISPLAY_NAME__" Square150x150Logo="Assets/Square150x150Logo.png" Square44x44Logo="Assets/Square44x44Logo.png" Description="__DESCRIPTION__" BackgroundColor="#00212B">
         <uap:DefaultTile Wide310x150Logo="Assets/Wide310x150Logo.png" Square310x310Logo="Assets/Square310x310Logo.png" Square71x71Logo="Assets/Square71x71Logo.png" />
         <uap:SplashScreen Image="Assets/SplashScreen.png" />
       </uap:VisualElements>
