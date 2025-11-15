@@ -855,6 +855,7 @@ class _TwinStage extends StatefulWidget {
   State<_TwinStage> createState() => _TwinStageState();
 }
 
+/// 팬/줌/카메라 인터랙션에 대한 상태 로직.
 class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
   late final AnimationController _cameraController;
   late final ValueNotifier<double> _linkPulseValue;
@@ -1120,6 +1121,7 @@ class _TwinStageState extends State<_TwinStage> with TickerProviderStateMixin {
   }
 }
 
+/// CPU/메모리 등의 아날로그 게이지 위젯.
 class _AnalogGauge extends StatefulWidget {
   const _AnalogGauge({
     required this.label,
@@ -1147,6 +1149,7 @@ class _AnalogGauge extends StatefulWidget {
   State<_AnalogGauge> createState() => _AnalogGaugeState();
 }
 
+/// 게이지 애니메이션 로직을 담당하는 상태 클래스.
 class _AnalogGaugeState extends State<_AnalogGauge>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
@@ -1240,6 +1243,7 @@ class _AnalogGaugeState extends State<_AnalogGauge>
   }
 }
 
+/// 게이지 원호를 직접 그리는 Painter.
 class _GaugePainter extends CustomPainter {
   const _GaugePainter({required this.normalized, required this.color});
 
@@ -3105,6 +3109,7 @@ Offset twinProjectPoint(
 }
 
 Offset _quadraticPoint(Offset p0, Offset p1, Offset p2, double t) {
+  // 링크 베지어 곡선의 중간 포인트 계산.
   final omt = 1 - t;
   final x = omt * omt * p0.dx + 2 * omt * t * p1.dx + t * t * p2.dx;
   final y = omt * omt * p0.dy + 2 * omt * t * p1.dy + t * t * p2.dy;
@@ -3112,6 +3117,7 @@ Offset _quadraticPoint(Offset p0, Offset p1, Offset p2, double t) {
 }
 
 double hostBubbleRadius(TwinHost host) {
+  // CPU 부하에 따라 노드 반경을 조정한다.
   if (host.isCore) {
     return 18.0;
   }
@@ -3212,6 +3218,7 @@ void _drawArrowHead(
   );
 }
 
+/// 3D 좌표를 투영한 결과(화면 오프셋 + 깊이/스케일).
 class _ProjectedPoint {
   const _ProjectedPoint(this.offset, this.depth, this.scaleFactor);
 
@@ -3421,6 +3428,7 @@ String? _formatHostMemorySubtitle(TwinHost host) {
   return '사용 ${percent.clamp(0, 100).toStringAsFixed(1)}%';
 }
 
+/// 카드 배경으로 사용되는 글래스 스타일 래퍼.
 class _GlassTile extends StatelessWidget {
   const _GlassTile({required this.child});
 
@@ -4913,6 +4921,7 @@ class _DockHostGuard extends StatelessWidget {
   }
 }
 
+/// 간단한 페이지네이션 인디케이터 점.
 class _PageDots extends StatelessWidget {
   const _PageDots({required this.count, required this.index});
 
