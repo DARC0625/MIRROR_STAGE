@@ -9,6 +9,7 @@ import '../models/twin_models.dart';
 const _defaultTwinWsUrl =
     String.fromEnvironment('MIRROR_STAGE_WS_URL', defaultValue: 'http://localhost:3000/digital-twin');
 
+/// 디지털 트윈 WebSocket 스트림을 구독하는 헬퍼 클래스.
 class TwinChannel {
   TwinChannel({Uri? endpoint, bool connectImmediately = true})
       : _endpoint = endpoint ?? Uri.parse(_defaultTwinWsUrl),
@@ -25,6 +26,7 @@ class TwinChannel {
   bool _disposed = false;
   int _attempt = 0;
 
+  /// TwinState 프레임을 브로드캐스트 스트림으로 제공.
   Stream<TwinStateFrame> stream() {
     if (!_controller.hasListener) {
       _controller.onListen = () {
@@ -43,6 +45,7 @@ class TwinChannel {
     return _controller.stream;
   }
 
+  /// 소켓과 스트림을 정리한다.
   Future<void> dispose() async {
     await _disposeSocket();
     if (!_controller.isClosed) {
@@ -50,6 +53,7 @@ class TwinChannel {
     }
   }
 
+  /// 소켓 리소스를 안전하게 정리한다.
   Future<void> _disposeSocket() async {
     _disposed = true;
     final socket = _socket;
@@ -63,6 +67,7 @@ class TwinChannel {
     }
   }
 
+  /// 백오프 전략으로 WebSocket 연결을 시도한다.
   void _connect() {
     if (_disposed || !_connectImmediately) {
       return;
@@ -113,6 +118,7 @@ class TwinChannel {
     socket.connect();
   }
 
+  /// 지수 백오프 + 지터를 적용해 재연결한다.
   void _scheduleReconnect() {
     if (_disposed || !_connectImmediately) {
       return;

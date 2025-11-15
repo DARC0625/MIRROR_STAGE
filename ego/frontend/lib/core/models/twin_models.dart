@@ -38,6 +38,7 @@ enum TwinHostStatus { online, stale, offline }
 
 const String _egoHostId = 'ego-hub';
 
+/// 3차원 좌표를 나타내는 모델.
 class TwinPosition {
   const TwinPosition({required this.x, required this.y, required this.z});
 
@@ -70,6 +71,7 @@ class TwinPosition {
   }
 }
 
+/// 호스트의 요약 메트릭.
 class HostMetricsSummary {
   const HostMetricsSummary({
     required this.cpuLoad,
@@ -137,6 +139,7 @@ class HostMetricsSummary {
   }
 }
 
+/// 하드웨어 구조 정보.
 class HostHardwareSummary {
   const HostHardwareSummary({
     this.systemManufacturer,
@@ -528,6 +531,7 @@ class TwinLink {
   }
 }
 
+/// 실시간 디지털 트윈 데이터의 프런트엔드 표현.
 class TwinStateFrame {
   const TwinStateFrame({
     required this.twinId,

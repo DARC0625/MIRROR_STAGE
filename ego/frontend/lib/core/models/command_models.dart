@@ -2,6 +2,7 @@ import 'package:intl/intl.dart';
 
 enum CommandStatus { pending, running, succeeded, failed, timeout }
 
+/// 명령 한 건의 DTO.
 class CommandJob {
   const CommandJob({
     required this.id,
@@ -76,6 +77,7 @@ class CommandJob {
   }
 }
 
+/// 명령 목록 + 페이지네이션 정보를 담는 DTO.
 class CommandPage {
   const CommandPage({
     required this.items,
