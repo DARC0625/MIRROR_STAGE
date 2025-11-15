@@ -252,10 +252,11 @@ public class MainForm : Form
     private async Task<string> DownloadAssetAsync(string url, string destinationPath)
     {
         AppendLog($"번들을 다운로드하는 중... {url}");
-        using var response = await _httpClient.GetAsync(url);
+        using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
-        await using var fs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        await response.Content.CopyToAsync(fs);
+        await using var network = await response.Content.ReadAsStreamAsync();
+        await using var fs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+        await network.CopyToAsync(fs);
         return destinationPath;
     }
 
