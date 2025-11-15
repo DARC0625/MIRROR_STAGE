@@ -3,6 +3,7 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Update
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 export type AlertStatus = 'active' | 'resolved';
 
+/** 경보 테이블 */
 @Entity({ name: 'alerts' })
 @Index(['hostname', 'status'])
 export class AlertEntity {
