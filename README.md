@@ -7,7 +7,7 @@
 - **디지털 트윈 스트림**: `DigitalTwinService`가 호스트 상태를 메모리에 유지하며 BehaviorSubject로 스냅샷을 전파합니다. WebSocket 게이트웨이(`/digital-twin`)와 REST 엔드포인트(`/api/twin/state`) 모두 같은 스냅샷을 제공합니다.
 - **명령/경보/자가 모니터링**: CommandsService가 큐+History+RxJS 스트림을 제공하고, AlertsService는 CPU/메모리/링크 혼잡 임계치를 평가합니다. EgoMonitorService는 EGO 서버 자체를 시스템정보(systeminformation)로 수집해 동일 파이프라인에 재주입합니다.
 - **HUD(frontend)**: Flutter 3.35 기반 `main.dart`가 TwinChannel(socket.io) 스트림을 수신해 2.5D OSI 계층 맵(_TwinScenePainter)과 좌/우 4×N 위젯 도킹 시스템을 그립니다. Pretendard 폰트, WebGL 없이 Canvas + 커스텀 painter로 구현되었습니다.
-- **설치/포장**: `packaging/install-mirror-stage-ego.ps1`와 Inno Setup 스크립트로 Windows 설치 프로그램을 생성하고, `start_ego.ps1`는 번들 Node/Flutter 없이 빌드 산출물만으로 런타임을 부팅합니다.
+- **설치/포장**: `packaging/install-mirror-stage-ego.ps1`는 모든 의존성을 설치/빌드하는 메인 스크립트이고, `packaging/msix/build_msix.ps1`가 MSIX 레이아웃을 만들어 WinGet/MSIX 배포 파이프라인에 투입합니다. 부팅은 `start_ego.ps1`로 수행합니다.
 
 ## 디렉터리 구조
 ```
@@ -17,7 +17,7 @@ mirror_stage/
 │   ├── frontend/  # Flutter HUD (web/desktop/mobile 대응)
 │   └── docs/      # 설계/ADR 초안들
 ├── reflector/     # Python REFLECTOR agent (telemetry + command loop)
-├── packaging/     # Windows 설치 스크립트(Inno Setup + PowerShell)
+├── packaging/     # Windows 설치 스크립트(MSIX/WinGet + PowerShell)
 ├── assets/        # Pretendard 등 프런트 자산
 ├── scripts/       # 배포/진단용 유틸리티
 └── docker-compose.yml # 로컬 개발용 Postgres/Redis 샘플
@@ -136,9 +136,9 @@ python -m agent.main --config config.json  # 백그라운드 실행 시 systemd/
 | REFLECTOR lint/test | (구성 예정, psutil 기반이므로 mypy/pylint 적용 가능) |
 
 ## 패키징 및 배포
-- `packaging/install-mirror-stage-ego.ps1`: Windows 설치 프로그램이 실행하는 메인 스크립트. Node/Flutter SDK를 `%LOCALAPPDATA%\MIRROR_STAGE\tools`에 설치, `npm ci`, `flutter pub get`, `flutter build web`, `npm run build` 순서로 실행 후 서비스 런처 등록.
-- `packaging/ego-installer.iss`: Inno Setup 정의. PowerShell 설치 스크립트와 Flutter/Nest 산출물을 포함.
-- GitHub Actions 워크플로(별도 설정 필요)가 `install-mirror-stage-ego.ps1` 실행 여부·로그를 기록해 배포 품질 검증.
+- `packaging/install-mirror-stage-ego.ps1`: Windows에서 실행되는 주 설치 스크립트. `%LOCALAPPDATA%\MIRROR_STAGE\tools` 아래에 Node/Flutter SDK를 내려받아 `npm ci → npm run build → flutter build web` 순으로 빌드하고 런처(`start_ego.ps1`)를 구성한다.
+- `packaging/msix/build_msix.ps1`: MSIX 패키지 레이아웃을 생성한다. 스크립트는 .NET 기반 부트스트랩퍼(`packaging/bootstrapper/`)를 빌드해 포함하고, 리포지토리의 `ego/`·`assets/`·`install` 스크립트를 레이아웃으로 복사한다. `makeappx.exe`와 `signtool.exe`를 이용해 서명된 `.msix`를 만든 뒤 WinGet 매니페스트로 배포할 수 있다.
+- WinGet/기업 배포 파이프라인에서는 `build_msix.ps1 -Pack`으로 생성된 MSIX를 업로드하고, WinGet 매니페스트만 작성하면 된다. 필요 시 기존 PowerShell 스크립트만 별도로 실행해 조용히 설치할 수도 있다.
 
 ## 향후 정비 포인트 (현재 코드 기반)
 - AlertsService 임계치/메시지 다국어화 및 사용자 정의 규칙 저장소 추가.
