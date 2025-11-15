@@ -27,14 +27,20 @@ jobs:
           }
           "msix_version=$value" >> $env:GITHUB_OUTPUT
 
-      - name: Install Windows SDK tools
-        shell: pwsh
-        run: |
-          choco install windows-sdk-10-version-2004-all --yes --no-progress
-
       - name: Build MSIX package
         shell: pwsh
         run: |
+          $sdkPath = "C:\Program Files (x86)\Windows Kits\10\bin"
+          $makeAppx = Get-ChildItem -Path $sdkPath -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $makeAppx) {
+            Write-Host "Installing Windows SDK..." -ForegroundColor Yellow
+            choco install windows-sdk-10-version-1809-all --yes --no-progress
+            $makeAppx = Get-ChildItem -Path $sdkPath -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $makeAppx) {
+            throw "Unable to locate makeappx.exe even after installing Windows SDK."
+          }
+          $env:PATH = "$($makeAppx.Directory.FullName);$env:PATH"
           $version = '${{ steps.version.outputs.msix_version }}'
           pwsh packaging/msix/build_msix.ps1 -Pack `
             -PackageName "MirrorStage.Ego" `
