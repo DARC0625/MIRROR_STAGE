@@ -118,7 +118,6 @@ begin
     LogMemo.Clear;
     WizardForm.BackButton.Enabled := False;
     WizardForm.NextButton.Enabled := False;
-    WizardForm.CancelButton.Enabled := False;
   end;
 
   Cmd :=
@@ -141,6 +140,8 @@ begin
     repeat
       WaitResult := WaitForSingleObject(ProcessHandle, 200);
       PumpLog;
+      if not WizardSilent then
+        Application.ProcessMessages;
     until WaitResult <> WAIT_TIMEOUT;
 
     PumpLog;
@@ -160,7 +161,6 @@ begin
     begin
       WizardForm.BackButton.Enabled := True;
       WizardForm.NextButton.Enabled := True;
-      WizardForm.CancelButton.Enabled := True;
     end;
   end;
 end;
