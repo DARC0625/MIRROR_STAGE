@@ -141,8 +141,6 @@ begin
     repeat
       WaitResult := WaitForSingleObject(ProcessHandle, 200);
       PumpLog;
-      if not WizardSilent then
-        WizardForm.ProcessMessages;
     until WaitResult <> WAIT_TIMEOUT;
 
     PumpLog;
