@@ -1,5 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
+/** 호스트별 최신 메트릭 상태를 저장하는 View-like 엔티티 */
 @Entity({ name: 'host_metrics' })
 export class HostMetricEntity {
   @PrimaryColumn({ type: 'varchar', length: 120 })

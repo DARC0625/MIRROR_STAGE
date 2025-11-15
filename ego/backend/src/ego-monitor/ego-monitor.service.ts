@@ -7,12 +7,14 @@ import * as os from 'os';
 import si from 'systeminformation';
 import type { Systeminformation } from 'systeminformation';
 
+/** 모니터링 대상 기본 네트워크 인터페이스 정보 */
 interface PrimaryInterface {
   iface: string;
   ip4?: string;
   speed?: number;
 }
 
+/** 하드웨어 정적 정보 */
 interface HardwareSnapshot {
   systemManufacturer?: string;
   systemModel?: string;
@@ -26,6 +28,10 @@ interface HardwareSnapshot {
   osKernel?: string;
 }
 
+/**
+ * MIRROR STAGE EGO 인스턴스 자체의 메트릭을 수집해
+ * MetricsService/DigitalTwin 으로 주기적으로 전송한다.
+ */
 @Injectable()
 export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EgoMonitorService.name);
@@ -52,6 +58,7 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     this.rack = this.configService.get<string>('EGO_RACK');
   }
 
+  /** 모듈 초기화 시 주기적 수집 타이머를 등록한다. */
   onModuleInit(): void {
     if (!this.enabled) {
       const isTestEnvironment = this.configService.get<string>('NODE_ENV') === 'test' || process.env.JEST_WORKER_ID !== undefined;
@@ -79,6 +86,7 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     this.collectAndPublish().catch((error) => this.logger.error('Initial EGO metrics collection failed', error));
   }
 
+  /** 애플리케이션 종료 시 타이머를 정리한다. */
   onModuleDestroy(): void {
     if (!this.enabled) {
       return;
@@ -93,6 +101,9 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * 시스템 정보를 수집하여 MetricSample 을 만든 뒤 MetricsService 로 전달한다.
+   */
   private async collectAndPublish(): Promise<void> {
     const hostname = (this.hostnameOverride ?? os.hostname()).trim() || 'ego-hub';
     const timestamp = new Date().toISOString();
@@ -225,6 +236,7 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     await this.metricsService.ingestBatch([sample]);
   }
 
+  /** CPU 온도 구조체에서 대표값을 뽑는다. */
   private extractCpuTemperature(
     cpuTemperatureInfo: Awaited<ReturnType<typeof si.cpuTemperature>> | null,
   ): number | null {
@@ -246,6 +258,7 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     return null;
   }
 
+  /** GPU 컨트롤러 배열에서 최고 온도를 뽑는다. */
   private extractGpuTemperature(
     graphicsInfo: Awaited<ReturnType<typeof si.graphics>> | null,
   ): number | null {
@@ -265,6 +278,7 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     return Number(Math.max(...temperatures).toFixed(1));
   }
 
+  /** 하드웨어 정보를 캐시된 Promise 로 재사용한다. */
   private async resolveHardwareSnapshot(): Promise<HardwareSnapshot> {
     if (!this.hardwareSnapshotPromise) {
       this.hardwareSnapshotPromise = this.fetchHardwareSnapshot();
@@ -278,6 +292,7 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** systeminformation 호출을 병렬 수행해 하드웨어 스냅샷을 구성한다. */
   private async fetchHardwareSnapshot(): Promise<HardwareSnapshot> {
     const [systemInfo, biosInfo, cpuInfo, memInfo, osInfo] = await Promise.all([
       this.safeCollect(() => si.system(), 'system'),
@@ -301,6 +316,7 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  /** 기본 네트워크 인터페이스를 선택한다. */
   private async resolvePrimaryInterface(): Promise<PrimaryInterface | null> {
     try {
       const interfaces = await si.networkInterfaces();
@@ -322,6 +338,7 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** systeminformation 호출 실패를 무시하고 로그만 남기기 위한 헬퍼. */
   private async safeCollect<T>(fn: () => Promise<T> | T, label: string): Promise<T | null> {
     try {
       return await Promise.resolve(fn());
@@ -331,6 +348,7 @@ export class EgoMonitorService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** 기본 인터페이스가 없을 경우 OS 네트워크 목록에서 IPv4를 찾는다. */
   private resolveFallbackIp(): string | undefined {
     const networks = os.networkInterfaces();
     for (const iface of Object.values(networks)) {

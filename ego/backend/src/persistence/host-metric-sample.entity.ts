@@ -1,5 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, Index } from 'typeorm';
 
+/** 메트릭 히스토리를 기록하는 샘플 테이블 */
 @Entity({ name: 'host_metric_samples' })
 @Index(['hostname', 'timestamp'])
 export class HostMetricSampleEntity {
