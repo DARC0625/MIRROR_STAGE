@@ -106,6 +106,18 @@ jobs:
           name: mirror-stage-bundles
           path: packaging\bundles\*.zip
 
+      - name: Publish rolling release (latest)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ego-latest
+          name: MIRROR STAGE (latest)
+          fail_on_unmatched_files: false
+          files: |
+            packaging/msix/output/*.msix
+            packaging/launcher/mirror-stage-launcher.zip
+            packaging/bundles/*.zip
+
       - name: Publish release assets
         if: startsWith(github.ref, 'refs/tags/ego-v')
         uses: softprops/action-gh-release@v1
