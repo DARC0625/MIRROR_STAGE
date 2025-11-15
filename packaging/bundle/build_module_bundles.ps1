@@ -22,6 +22,9 @@ function New-Bundle {
     $tempDir = Join-Path $bundleRoot $Name
     New-Item -ItemType Directory -Path $tempDir | Out-Null
     & $ContentBuilder $tempDir
+    Get-ChildItem -Path $tempDir -Directory -Recurse -Force |
+        Where-Object { $_.Name -in '.git','node_modules','build','.dart_tool' } |
+        ForEach-Object { Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 
     $zipPath = Join-Path $bundleRoot ("{0}.zip" -f $Name)
     if (Test-Path $zipPath) {
