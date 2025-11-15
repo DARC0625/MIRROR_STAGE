@@ -1,3 +1,7 @@
+/**
+ * 디지털 트윈 영역에서 사용되는 타입 정의 모음.
+ * Nest/Socket.IO 경계를 넘나들기 때문에 DTO 역할을 한다.
+ */
 export type TwinHostStatus = 'online' | 'stale' | 'offline';
 
 export interface HostMetricsSummary {

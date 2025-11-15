@@ -18,6 +18,10 @@ import type {
   HostInterfaceSnapshot,
 } from './digital-twin.types';
 
+/**
+ * 내부 메모리에 유지되는 호스트 상태를 나타낸다.
+ * 수집된 샘플과, 이전 전송량/위치 등의 캐시값을 함께 담는다.
+ */
 interface HostState {
   hostname: string;
   displayName: string;
@@ -42,6 +46,12 @@ const EGO_DISPLAY_NAME = process.env.EGO_DISPLAY_NAME ?? 'MIRROR STAGE EGO';
 const EGO_PRIMARY_IP = process.env.EGO_PRIMARY_IP ?? '10.0.0.100';
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
+/**
+ * 디지털 트윈 스트림을 관리하는 핵심 서비스.
+ * - Metrics 샘플 수집/정규화
+ * - 노드/링크 스냅샷 구성
+ * - BehaviorSubject 로 스트림 제공
+ */
 @Injectable()
 export class DigitalTwinService {
   private readonly logger = new Logger(DigitalTwinService.name);
@@ -55,6 +65,10 @@ export class DigitalTwinService {
 
   constructor(@Optional() @Inject(CACHE_TOKEN) private readonly cache?: Cache) {}
 
+  /**
+   * 새로운 메트릭 샘플을 흡수하여 상태를 업데이트하고
+   * 최신 스냅샷을 스트림으로 내보낸다.
+   */
   ingestSample(sample: MetricSample): void {
     const hostname = sample.hostname.trim();
     if (!hostname) {
@@ -142,16 +156,19 @@ export class DigitalTwinService {
     void this.persistSnapshot(snapshot);
   }
 
+  /** 현재 스냅샷을 즉시 반환한다. */
   getSnapshot(): TwinState {
     return this.twinSubject.getValue();
   }
 
+  /** 특정 호스트의 트윈 상태만 조회한다. */
   getHostTwinState(hostname: string): HostTwinState | undefined {
     const snapshot = this.twinSubject.getValue();
     return snapshot.hosts.find((host) => host.hostname === hostname);
   }
 
 
+  /** 모든 호스트/링크를 조합해 렌더 가능한 스냅샷을 만든다. */
   private buildSnapshot(): TwinState {
     const now = Date.now();
     const allHosts = Array.from(this.state.values());
@@ -223,6 +240,7 @@ export class DigitalTwinService {
     };
   }
 
+  /** 최신 스냅샷을 캐시에 저장해 재시작 시 재사용한다. */
   private async persistSnapshot(snapshot: TwinState): Promise<void> {
     try {
       if (!this.cache) {
@@ -234,6 +252,10 @@ export class DigitalTwinService {
     }
   }
 
+  /**
+   * 호스트를 황금각 나선으로 배치해 촘촘하지만 겹치지 않게 만든다.
+   * index/total을 이용해 수학적으로 위치를 계산한다.
+   */
   private computePosition(index: number, total: number, radius = 14): TwinPosition {
     if (total <= 0) {
       return { x: 0, y: 0, z: 0 };
@@ -251,6 +273,7 @@ export class DigitalTwinService {
     };
   }
 
+  /** 마지막 샘플 시점(latency)에 따라 온라인/지연/오프라인을 판별한다. */
   private resolveStatus(latency: number): TwinHostStatus {
     if (latency < 15_000) {
       return 'online';
@@ -261,10 +284,15 @@ export class DigitalTwinService {
     return 'offline';
   }
 
+  /** 네트워크 전송량이 없는 경우 CPU 부하를 근사치로 사용한다. */
   private estimateThroughput(metrics: HostMetricsSummary): number {
     return this.normalizeThroughput(metrics.netThroughputGbps, metrics.cpuLoad);
   }
 
+  /**
+   * 샘플에서 전달된 진단 정보를 추출해 HostDiagnosticsSnapshot 으로 만든다.
+   * 이전 값이 존재하면 필요한 항목만 덮어쓴다.
+   */
   private extractDiagnostics(sample: MetricSample, previous?: HostDiagnosticsSnapshot): HostDiagnosticsSnapshot | undefined {
     const diagnostics: HostDiagnosticsSnapshot = previous ? { ...previous } : {};
     let mutated = false;
@@ -318,6 +346,7 @@ export class DigitalTwinService {
     return mutated ? diagnostics : previous;
   }
 
+  /** 수집된 process 정보를 안전하게 정규화한다. */
   private normalizeProcess(entry: unknown): HostProcessSnapshot | null {
     if (!entry || typeof entry !== 'object') {
       return null;
@@ -340,6 +369,7 @@ export class DigitalTwinService {
     };
   }
 
+  /** 디스크 정보를 HostDiskSnapshot 으로 변환한다. */
   private normalizeDisk(entry: unknown): HostDiskSnapshot | null {
     if (!entry || typeof entry !== 'object') {
       return null;
@@ -356,6 +386,7 @@ export class DigitalTwinService {
     };
   }
 
+  /** 네트워크 인터페이스 정보를 정규화한다. */
   private normalizeInterface(entry: unknown): HostInterfaceSnapshot | null {
     if (!entry || typeof entry !== 'object') {
       return null;
@@ -376,6 +407,7 @@ export class DigitalTwinService {
     };
   }
 
+  /** 샘플이 실제 하드웨어가 아닌 합성 데이터인지 판별한다. */
   private detectSynthetic(sample: MetricSample): boolean {
     const agentVersion = (sample.agent_version ?? '').toLowerCase();
     const platform = (sample.platform ?? '').toLowerCase();
@@ -392,6 +424,7 @@ export class DigitalTwinService {
     return false;
   }
 
+  /** 타임스탬프가 누락된 경우 현재 시각을 fallback 으로 사용한다. */
   private parseTimestamp(timestamp: string | undefined, fallbackMs: number): number {
     if (timestamp) {
       const parsed = Date.parse(timestamp);
@@ -402,6 +435,7 @@ export class DigitalTwinService {
     return fallbackMs;
   }
 
+  /** 태그 또는 인터페이스 정보에서 대역폭(capacity) 값을 뽑는다. */
   private extractCapacityGbps(sample: MetricSample, fallback?: number | null): number | null {
     const tags = sample.tags ?? {};
     const tagCandidate =
@@ -429,6 +463,7 @@ export class DigitalTwinService {
     return capacity;
   }
 
+  /** 인터페이스 배열 안에 capacity 속성이 있으면 취합한다. */
   private extractCapacityFromInterfaces(sample: MetricSample): number | null {
     const raw = (sample as Record<string, unknown>).interfaces;
     if (!Array.isArray(raw)) {
@@ -451,6 +486,7 @@ export class DigitalTwinService {
     return null;
   }
 
+  /** 샘플 + 태그에서 하드웨어 요약 정보를 구성한다. */
   private buildHardwareSummary(sample: MetricSample, tags: Record<string, string>): HostHardwareSummary {
     return {
       systemManufacturer: this.pickString(sample.system_manufacturer, tags['system_manufacturer']),
@@ -466,6 +502,7 @@ export class DigitalTwinService {
     };
   }
 
+  /** 하드웨어 스냅샷을 기존 값과 병합해 null 값만 채운다. */
   private mergeHardwareSnapshot(target: HostState, snapshot: HostHardwareSummary): void {
     if (!snapshot) {
       return;
@@ -485,6 +522,7 @@ export class DigitalTwinService {
     }
   }
 
+  /** 문자열 후보군에서 처음으로 유효한 값을 고른다. */
   private pickString(...candidates: Array<unknown>): string | null {
     for (const candidate of candidates) {
       if (typeof candidate === 'string') {
@@ -497,6 +535,7 @@ export class DigitalTwinService {
     return null;
   }
 
+  /** 숫자처럼 보이는 값을 number/null 로 변환한다. */
   private coerceNullableNumber(value: unknown): number | null {
     if (value === undefined || value === null) {
       return null;
@@ -508,6 +547,7 @@ export class DigitalTwinService {
     return null;
   }
 
+  /** 정수처럼 보이는 값을 number/null 로 변환한다. */
   private coerceNullableInteger(value: unknown): number | null {
     const parsed = this.coerceNullableNumber(value);
     if (parsed === null) {
@@ -516,6 +556,10 @@ export class DigitalTwinService {
     return Math.trunc(parsed);
   }
 
+  /**
+   * 두 샘플 간 전송량을 기반으로 실효 Throughput(Gbps)을 계산한다.
+   * 이전 값이 없거나 카운터가 초기화되면 null 을 반환한다.
+   */
   private computeThroughputGbps(state: HostState, sample: MetricSample, sampleTimestamp: number): number | null {
     const prevTimestamp = state.previousSampleTimestamp;
     const txNow = sample.net_bytes_tx ?? null;
@@ -557,6 +601,7 @@ export class DigitalTwinService {
     return null;
   }
 
+  /** 0 또는 음수 throughput 은 CPU 부하 기반 근사치로 대체한다. */
   private normalizeThroughput(raw: number | null | undefined, cpuLoad: number): number {
     if (raw != null && Number.isFinite(raw)) {
       return Math.max(0, Number(raw.toFixed(3)));
@@ -565,6 +610,9 @@ export class DigitalTwinService {
     return Number(fallback.toFixed(3));
   }
 
+  /**
+   * 샘플에 IPv4가 없을 경우, 가상의 관리망 대역(10.0.0.x)을 순차 할당한다.
+   */
   private ensureIp(hostname: string, candidate?: string): string {
     if (candidate && this.isValidV4(candidate)) {
       this.ipAssignments.set(hostname, candidate);
@@ -581,6 +629,7 @@ export class DigitalTwinService {
     return ip;
   }
 
+  /** IPv4 주소 형식을 간단히 검증한다. */
   private isValidV4(candidate: string): boolean {
     const parts = candidate.split('.');
     if (parts.length !== 4) {
@@ -593,6 +642,7 @@ export class DigitalTwinService {
   }
 
 
+  /** 호스트명/에이전트 버전을 활용해 대시보드 라벨을 꾸민다. */
   private formatReflectorName(host: HostState): string {
     const ip = host.ip;
     if (ip && this.isValidV4(ip)) {
@@ -608,6 +658,7 @@ export class DigitalTwinService {
     return `REFLECTOR-${normalized.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase()}`;
   }
 
+  /** 노드 카드에 표시할 다중라인 라벨을 만든다. */
   private formatLabel(displayName: string, ip: string, rack?: string): string {
     const segments = [displayName, ip];
     if (rack) {
@@ -616,6 +667,7 @@ export class DigitalTwinService {
     return segments.join('\n');
   }
 
+  /** 중앙 EGO 허브 노드의 상태를 구성한다. */
   private buildEgoHost(egoState: HostState | undefined, timestamp: number): HostTwinState {
     const metrics = egoState?.metrics ?? this.defaultCoreMetrics();
     if (metrics.netThroughputGbps == null) {
@@ -644,6 +696,7 @@ export class DigitalTwinService {
     };
   }
 
+  /** 특정 호스트가 EGO 허브인지 여부. */
   private isEgoHost(host: HostState): boolean {
     if (!host) {
       return false;
@@ -655,6 +708,7 @@ export class DigitalTwinService {
     return normalized === EGO_HOSTNAME || normalized === EGO_DISPLAY_NAME.toLowerCase();
   }
 
+  /** 기본 EGO 노드 메트릭스 플레이스홀더. */
   private defaultCoreMetrics(): HostMetricsSummary {
     return {
       cpuLoad: 0,
