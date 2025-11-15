@@ -103,6 +103,7 @@ var
   ProcessHandle: LongWord;
   ExitCode: LongWord;
   WaitResult: LongWord;
+  ResultCode: Integer;
 begin
   if ScriptExecuted then
     Exit;
@@ -129,9 +130,13 @@ begin
     ' -ProgressLogPath "' + ProgressLogFile + '"';
 
   ProcessHandle := 0;
+  ResultCode := 0;
   try
-    if not Exec('powershell.exe', Cmd, '', SW_HIDE, ewNoWait, ProcessHandle) then
+    if not Exec('powershell.exe', Cmd, '', SW_HIDE, ewNoWait, ResultCode) then
       RaiseException('PowerShell 설치 스크립트를 시작하지 못했습니다.');
+    ProcessHandle := LongWord(ResultCode);
+    if ProcessHandle = 0 then
+      RaiseException('PowerShell 프로세스 핸들을 가져오지 못했습니다.');
 
     repeat
       WaitResult := WaitForSingleObject(ProcessHandle, 200);
