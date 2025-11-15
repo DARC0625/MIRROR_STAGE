@@ -7,6 +7,7 @@ import { HostMetricEntity } from '../persistence/host-metric.entity';
 import { HostMetricSampleEntity } from '../persistence/host-metric-sample.entity';
 import { AlertsModule } from '../alerts/alerts.module';
 
+/** Metrics ingest + 알람 + 트윈 연동을 담당하는 모듈 */
 @Module({
   imports: [DigitalTwinModule, AlertsModule, TypeOrmModule.forFeature([HostMetricEntity, HostMetricSampleEntity])],
   controllers: [MetricsController],

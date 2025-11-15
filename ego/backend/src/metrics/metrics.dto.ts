@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+/** 에이전트가 제공하는 좌표 값 */
 export const MetricPositionSchema = z
   .object({
     x: z.number(),
@@ -13,6 +14,7 @@ export const MetricPositionSchema = z
     z: value.z ?? 0,
   }));
 
+/** Metrics ingest 시 단일 샘플의 Zod 스키마 */
 export const MetricSampleSchema = z
   .object({
     hostname: z.string().min(1),
@@ -50,9 +52,10 @@ export const MetricSampleSchema = z
   })
   .passthrough();
 
+/** 샘플 배열 래퍼 (최소 1개) */
 export const MetricsBatchSchema = z.object({
-    samples: z.array(MetricSampleSchema).min(1),
-  });
+  samples: z.array(MetricSampleSchema).min(1),
+});
 
 export type MetricSample = z.infer<typeof MetricSampleSchema>;
 export type MetricsBatch = z.infer<typeof MetricsBatchSchema>;

@@ -7,6 +7,9 @@ import { HostMetricEntity } from '../persistence/host-metric.entity';
 import { HostMetricSampleEntity } from '../persistence/host-metric-sample.entity';
 import { AlertsService } from '../alerts/alerts.service';
 
+/**
+ * 에이전트에서 발생한 메트릭을 DB와 디지털 트윈, 알람 시스템으로 전달한다.
+ */
 @Injectable()
 export class MetricsService {
   constructor(
@@ -18,6 +21,10 @@ export class MetricsService {
     private readonly metricSamplesRepository: Repository<HostMetricSampleEntity>,
   ) {}
 
+  /**
+   * 샘플 배열을 ingest 하여 디지털 트윈 + 알람 평가 + DB 저장을 수행한다.
+   * @returns 성공적으로 처리한 샘플 수
+   */
   async ingestBatch(samples: MetricSample[]): Promise<number> {
     const entities: HostMetricEntity[] = [];
     const historyEntities: HostMetricSampleEntity[] = [];
@@ -131,6 +138,7 @@ export class MetricsService {
     return processed;
   }
 
+  /** 태그/인터페이스에서 링크 속도(capacity)를 추출한다. */
   private extractCapacityGbps(sample: MetricSample): number | null {
     const tags = sample.tags ?? {};
     const candidate =
@@ -162,6 +170,7 @@ export class MetricsService {
     return null;
   }
 
+  /** 숫자 변환이 가능한 경우 number, 아니면 null. */
   private toNullableNumber(value: unknown): number | null {
     if (value === undefined || value === null) {
       return null;
