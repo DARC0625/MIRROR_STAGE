@@ -4059,6 +4059,7 @@ class _WidgetBuildContext {
   final BoxConstraints constraints;
 }
 
+/// 위젯 유형별 크기/제약/설명을 정의한 청사진.
 class _WidgetBlueprint {
   const _WidgetBlueprint({
     required this.type,
@@ -4328,6 +4329,7 @@ Widget _buildStorageWidget(BuildContext context, _WidgetBuildContext data) {
   return _StoragePanel(host: host);
 }
 
+/// 초기 레이아웃 구성용 시드 데이터.
 class _WidgetPlacementSeed {
   const _WidgetPlacementSeed({
     required this.type,
@@ -4342,6 +4344,7 @@ class _WidgetPlacementSeed {
   final int row;
 }
 
+/// 실제 도킹된 위젯 인스턴스의 위치/크기 정보.
 class _WidgetPlacement {
   const _WidgetPlacement({
     required this.id,
@@ -4393,6 +4396,7 @@ class _WidgetPlacement {
   );
 }
 
+/// 사이드바 위젯 도킹 레이아웃을 관리하는 컨트롤러.
 class _WidgetDockController extends ChangeNotifier {
   _WidgetDockController({
     required List<_WidgetPlacementSeed> initialPlacements,
@@ -4530,6 +4534,7 @@ class _WidgetDockController extends ChangeNotifier {
   }
 }
 
+/// 도킹된 위젯을 4xN 격자에 렌더링하는 패널.
 class _WidgetGridPanel extends StatefulWidget {
   const _WidgetGridPanel({
     required this.wing,
@@ -4925,6 +4930,7 @@ List<List<T>> _chunkList<T>(List<T> items, int size) {
   return result;
 }
 
+/// 위젯을 드래그로 추가할 수 있는 팔레트 패널.
 class _WidgetPaletteOverlay extends StatelessWidget {
   const _WidgetPaletteOverlay({
     required this.controller,
@@ -5005,6 +5011,7 @@ class _WidgetPaletteOverlay extends StatelessWidget {
   }
 }
 
+/// 팔레트 내 섹션 그룹.
 class _WidgetPaletteSection extends StatelessWidget {
   const _WidgetPaletteSection({
     required this.title,
@@ -5046,6 +5053,7 @@ class _WidgetPaletteSection extends StatelessWidget {
   }
 }
 
+/// 드래그 가능한 위젯 청사진 카드.
 class _WidgetPaletteChip extends StatelessWidget {
   const _WidgetPaletteChip({required this.blueprint, required this.isActive});
 
@@ -5119,6 +5127,7 @@ class _WidgetPaletteChip extends StatelessWidget {
   }
 }
 
+/// 좌측 헤더에서 팔레트 토글 버튼.
 class _WidgetPaletteButton extends StatelessWidget {
   const _WidgetPaletteButton({required this.isActive, required this.onPressed});
 
