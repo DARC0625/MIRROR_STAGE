@@ -21,7 +21,7 @@ function New-Bundle {
 
     $tempDir = Join-Path $bundleRoot $Name
     New-Item -ItemType Directory -Path $tempDir | Out-Null
-    & $ContentBuilder.Invoke($tempDir)
+    & $ContentBuilder $tempDir
 
     $zipPath = Join-Path $bundleRoot ("{0}.zip" -f $Name)
     if (Test-Path $zipPath) {
