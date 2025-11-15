@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -431,5 +432,11 @@ public class MainForm : Form
 
     private record ReleaseInfo(string? TagName, AssetInfo[] Assets);
 
-    private record AssetInfo(string Name, string BrowserDownloadUrl);
+    private record AssetInfo
+    {
+        public string Name { get; init; } = string.Empty;
+
+        [JsonPropertyName("browser_download_url")]
+        public string BrowserDownloadUrl { get; init; } = string.Empty;
+    }
 }
