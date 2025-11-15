@@ -31,11 +31,11 @@ jobs:
         shell: pwsh
         run: |
           $sdkPath = "C:\Program Files (x86)\Windows Kits\10\bin"
-          $makeAppx = Get-ChildItem -Path $sdkPath -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          $makeAppx = Get-ChildItem -Path $sdkPath -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'arm' -and $_.FullName -match 'x64' } | Select-Object -First 1
           if (-not $makeAppx) {
             Write-Host "Installing Windows SDK..." -ForegroundColor Yellow
             choco install windows-sdk-10-version-1809-all --yes --no-progress
-            $makeAppx = Get-ChildItem -Path $sdkPath -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            $makeAppx = Get-ChildItem -Path $sdkPath -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'arm' -and $_.FullName -match 'x64' } | Select-Object -First 1
           }
           if (-not $makeAppx) {
             throw "Unable to locate makeappx.exe even after installing Windows SDK."
