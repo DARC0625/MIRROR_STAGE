@@ -1299,6 +1299,7 @@ class _GaugePainter extends CustomPainter {
       oldDelegate.normalized != normalized || oldDelegate.color != color;
 }
 
+/// 좌측 패널 상단에 보여주는 전역/호스트 메트릭 카드.
 class _SidebarOverviewCard extends StatelessWidget {
   const _SidebarOverviewCard({
     required this.frame,
@@ -1381,6 +1382,7 @@ class _SidebarOverviewCard extends StatelessWidget {
   }
 }
 
+/// 좌측 패널에서 원격 명령을 실행할 수 있는 카드.
 class _CommandConsoleCard extends StatefulWidget {
   const _CommandConsoleCard({required this.frame, required this.selectedHost});
 
@@ -1725,6 +1727,7 @@ class _CommandConsoleCardState extends State<_CommandConsoleCard> {
   }
 }
 
+/// 명령 실행 이력 한 줄 UI.
 class _CommandJobTile extends StatelessWidget {
   const _CommandJobTile({required this.color, required this.job});
 
@@ -1786,6 +1789,7 @@ class _CommandJobTile extends StatelessWidget {
   }
 }
 
+/// 작은 상태 라벨 형태의 피ill 위젯.
 class _InfoPill extends StatelessWidget {
   const _InfoPill({required this.icon, required this.label});
 
@@ -1822,6 +1826,7 @@ class _InfoPill extends StatelessWidget {
   }
 }
 
+/// 하단 노드 선택 슬라이더.
 class _HostChipRail extends StatelessWidget {
   const _HostChipRail({
     required this.hosts,
@@ -1878,6 +1883,7 @@ class _HostChipRail extends StatelessWidget {
   }
 }
 
+/// 단일 호스트 선택 칩.
 class _HostChip extends StatelessWidget {
   const _HostChip({
     required this.host,
@@ -1969,6 +1975,7 @@ class _HostChip extends StatelessWidget {
   }
 }
 
+/// 선택한 호스트 정보를 보여주는 홀로그램 카드.
 class _HostHoloCard extends StatelessWidget {
   const _HostHoloCard({
     required this.host,
@@ -2161,6 +2168,7 @@ class _HostHoloCard extends StatelessWidget {
   }
 }
 
+/// 홀로카드 안의 작은 데이터 셀.
 class _HoloDatum extends StatelessWidget {
   const _HoloDatum({
     required this.icon,
@@ -2208,6 +2216,7 @@ class _HoloDatum extends StatelessWidget {
   }
 }
 
+/// 최근 일정량의 메트릭 샘플을 보존하는 순환 버퍼.
 class _MetricHistoryBuffer {
   _MetricHistoryBuffer();
 
@@ -2227,6 +2236,7 @@ class _MetricHistoryBuffer {
   void clear() => _samples.clear();
 }
 
+/// 버퍼 내부 샘플 표현.
 class _MetricSample {
   const _MetricSample({
     required this.timestamp,
