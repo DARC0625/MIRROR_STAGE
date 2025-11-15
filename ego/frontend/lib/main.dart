@@ -148,6 +148,7 @@ class DigitalTwinShell extends StatefulWidget {
 }
 
 /// 상태 스트림을 구독하고 사이드바/스테이지/도킹 레이아웃을 제어한다.
+/// 최상위 셸 상태: 스트림 구독 및 레이아웃 구성을 담당.
 class _DigitalTwinShellState extends State<DigitalTwinShell> {
   late final TwinChannel _channel;
   late final bool _ownsChannel;
@@ -398,6 +399,7 @@ class _DigitalTwinShellState extends State<DigitalTwinShell> {
 }
 
 /// 좌측 HUD 패널. 위젯 도킹과 계층 필터를 제공한다.
+/// 좌측 도킹 패널 위젯.
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.frame,
@@ -473,6 +475,7 @@ class _Sidebar extends StatelessWidget {
 }
 
 /// 우측 HUD 패널. 선택한 노드의 실시간 위젯과 히스토리를 도킹한다.
+/// 우측 패널: 호스트 텔레메트리 위젯 도킹.
 class _StatusSidebar extends StatefulWidget {
   const _StatusSidebar({
     required this.frame,
@@ -565,6 +568,7 @@ class _StatusSidebarState extends State<_StatusSidebar> {
 }
 
 /// CustomPaint 기반 투영 위젯. 3D 포인트를 화면 좌표로 사상한다.
+/// 3D 스테이지를 그리는 CustomPaint 래퍼.
 class _TwinViewport extends StatelessWidget {
   const _TwinViewport({
     required this.frame,
@@ -4085,6 +4089,7 @@ typedef _SidebarWidgetBuilder =
     Widget Function(BuildContext context, _WidgetBuildContext data);
 
 /// 도킹 빌드 시 필요한 메타정보 컨텍스트.
+/// 도킹 위젯 빌드 시 전달되는 컨텍스트.
 class _WidgetBuildContext {
   const _WidgetBuildContext({
     required this.frame,
