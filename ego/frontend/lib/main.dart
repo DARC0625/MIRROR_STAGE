@@ -3448,6 +3448,7 @@ class _GlassTile extends StatelessWidget {
   }
 }
 
+/// 링크 상태(대역폭/지연)을 표시하는 패널.
 class _LinkStatusPanel extends StatelessWidget {
   const _LinkStatusPanel({
     required this.title,
@@ -3614,6 +3615,7 @@ class _TemperaturePanel extends StatelessWidget {
   }
 }
 
+/// 프로세스 리스트의 단일 행.
 class _ProcessRow extends StatelessWidget {
   const _ProcessRow({required this.process});
 
@@ -3664,6 +3666,7 @@ class _ProcessRow extends StatelessWidget {
   }
 }
 
+/// 스토리지 사용량을 막대로 표현하는 위젯.
 class _DiskUsageBar extends StatelessWidget {
   const _DiskUsageBar({required this.disk});
 
@@ -3883,6 +3886,7 @@ class _ProcessPanelState extends State<_ProcessPanel> {
   }
 }
 
+/// 네트워크 인터페이스 패널.
 class _InterfacePanel extends StatelessWidget {
   const _InterfacePanel({required this.host});
 
@@ -4080,6 +4084,7 @@ const List<_WidgetPlacementSeed> _defaultDockPlacements = [
 typedef _SidebarWidgetBuilder =
     Widget Function(BuildContext context, _WidgetBuildContext data);
 
+/// 도킹 빌드 시 필요한 메타정보 컨텍스트.
 class _WidgetBuildContext {
   const _WidgetBuildContext({
     required this.frame,
@@ -4781,6 +4786,7 @@ class _WidgetGridPanelState extends State<_WidgetGridPanel> {
   }
 }
 
+/// 실제 도킹된 위젯 카드.
 class _DockedWidgetTile extends StatelessWidget {
   const _DockedWidgetTile({
     super.key,
@@ -4889,6 +4895,7 @@ class _DockedWidgetTile extends StatelessWidget {
   }
 }
 
+/// 드래그 핸들을 나타내는 아이콘.
 class _DockGripIcon extends StatelessWidget {
   const _DockGripIcon();
 
@@ -4908,6 +4915,7 @@ class _DockGripIcon extends StatelessWidget {
   }
 }
 
+/// 도킹 위젯이 호스트 선택이 필요한 경우 가드 레이어.
 class _DockHostGuard extends StatelessWidget {
   const _DockHostGuard({required this.message});
 
@@ -5183,6 +5191,7 @@ class _WidgetPaletteButton extends StatelessWidget {
   }
 }
 
+/// 계층 선택 팝업 버튼.
 class _TierButton extends StatelessWidget {
   const _TierButton({
     required this.focusedTier,
@@ -5310,6 +5319,7 @@ class _TierDragPayload {
   final int fromTier;
 }
 
+/// 도킹 격자의 셀 크기/간격 계산.
 class _GridSpec {
   const _GridSpec({
     required this.cellSize,
@@ -5384,6 +5394,7 @@ class _GridSpec {
   }
 }
 
+/// 격자 내 단일 셀 위치.
 class _GridCell {
   const _GridCell({required this.column, required this.row});
 
@@ -5391,6 +5402,7 @@ class _GridCell {
   final int row;
 }
 
+/// 도킹 영역 배경 격자를 그리는 Painter.
 class _GridBackgroundPainter extends CustomPainter {
   const _GridBackgroundPainter({required this.spec});
 
