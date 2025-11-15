@@ -628,7 +628,8 @@ function Ensure-SymlinkSupport {
         return
     }
 
-    throw "Symbolic links remain unavailable. Ensure the installer runs with administrative privileges or grant the 'Create symbolic links' right to this account, then rerun the installer."
+    Write-Log "[Installer] WARNING: symbolic links are still unavailable. Continuing, but Flutter plugin builds may fail without Developer Mode or symlink privileges." ([ConsoleColor]::Yellow)
+    Publish-Status "Symbolic link privilege missing; installation will continue anyway."
 }
 
 function Invoke-LoggedProcess {
