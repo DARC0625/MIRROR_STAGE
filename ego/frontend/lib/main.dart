@@ -2538,7 +2538,8 @@ class _TwinScenePainter extends CustomPainter {
     }
   }
 
-  List<Offset> _isoPlatePath(
+/// 계층 판의 꼭짓점을 등각 투영 좌표로 변환한다.
+List<Offset> _isoPlatePath(
     double minX,
     double maxX,
     double minZ,
@@ -3170,6 +3171,7 @@ _SceneBounds _computeSceneBounds(
   return _SceneBounds(minX: minX, maxX: maxX, minZ: minZ, maxZ: maxZ);
 }
 
+/// 디버그용 대시 경로를 그리는 유틸리티.
 void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
   const dash = 10.0;
   const gap = 6.0;
@@ -3522,6 +3524,7 @@ class _LinkStatusPanel extends StatelessWidget {
   }
 }
 
+/// 온도/센서 정보를 보여주는 카드.
 class _TemperaturePanel extends StatelessWidget {
   const _TemperaturePanel({
     required this.title,
