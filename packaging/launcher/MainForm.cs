@@ -25,6 +25,8 @@ public class MainForm : Form
     private const string RepoBranch = "main";
     private static readonly string RepoArchiveUrl = $"https://codeload.github.com/{RepoOwner}/{RepoName}/zip/refs/heads/{RepoBranch}";
     private static readonly string RepoApiBase = $"https://api.github.com/repos/{RepoOwner}/{RepoName}";
+    private const string DefaultArchiveUrl = "https://www.darc.kr/mirror-stage-latest.zip";
+    private const string DefaultVersionInfoUrl = "https://www.darc.kr/mirror-stage-version.json";
     private readonly LauncherConfig _config;
     private readonly string _archiveUrl;
     private readonly string? _versionInfoUrl;
@@ -38,8 +40,10 @@ public class MainForm : Form
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MirrorStageLauncher/1.0");
         _config = LauncherConfig.Load();
-        _archiveUrl = string.IsNullOrWhiteSpace(_config.SourceArchiveUrl) ? RepoArchiveUrl : _config.SourceArchiveUrl!;
-        _versionInfoUrl = string.IsNullOrWhiteSpace(_config.VersionInfoUrl) ? null : _config.VersionInfoUrl!;
+        var configArchive = string.IsNullOrWhiteSpace(_config.SourceArchiveUrl) ? null : _config.SourceArchiveUrl;
+        var configVersion = string.IsNullOrWhiteSpace(_config.VersionInfoUrl) ? null : _config.VersionInfoUrl;
+        _archiveUrl = configArchive ?? DefaultArchiveUrl ?? RepoArchiveUrl;
+        _versionInfoUrl = configVersion ?? DefaultVersionInfoUrl;
 
         _moduleOptions = new[]
         {
@@ -511,37 +515,45 @@ public class MainForm : Form
 
     private async Task<string?> FetchLatestCommitShaAsync()
     {
-        try
+        var candidates = new List<(string Url, bool IsCustom)>
         {
-            var requestUrl = _versionInfoUrl ?? $"{RepoApiBase}/commits/{RepoBranch}";
-            var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-            var response = await _httpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-            await using var stream = await response.Content.ReadAsStreamAsync();
-            using var document = await JsonDocument.ParseAsync(stream);
-            if (_versionInfoUrl != null)
+            (_versionInfoUrl ?? string.Empty, true),
+            ($"{RepoApiBase}/commits/{RepoBranch}", false)
+        }.Where(c => !string.IsNullOrWhiteSpace(c.Url)).ToList();
+
+        foreach (var candidate in candidates)
+        {
+            try
             {
-                if (document.RootElement.TryGetProperty("sha", out var shaElementCustom))
+                var request = new HttpRequestMessage(HttpMethod.Get, candidate.Url);
+                var response = await _httpClient.SendAsync(request);
+                response.EnsureSuccessStatusCode();
+                await using var stream = await response.Content.ReadAsStreamAsync();
+                using var document = await JsonDocument.ParseAsync(stream);
+                if (candidate.IsCustom)
                 {
-                    var customSha = shaElementCustom.GetString();
-                    if (!string.IsNullOrWhiteSpace(customSha))
+                    if (document.RootElement.TryGetProperty("sha", out var shaElementCustom))
                     {
-                        return NormalizeSha(customSha);
+                        var customSha = shaElementCustom.GetString();
+                        if (!string.IsNullOrWhiteSpace(customSha))
+                        {
+                            return NormalizeSha(customSha);
+                        }
+                    }
+                }
+                else if (document.RootElement.TryGetProperty("sha", out var shaElement))
+                {
+                    var sha = shaElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(sha))
+                    {
+                        return NormalizeSha(sha);
                     }
                 }
             }
-            else if (document.RootElement.TryGetProperty("sha", out var shaElement))
+            catch (Exception ex)
             {
-                var sha = shaElement.GetString();
-                if (!string.IsNullOrWhiteSpace(sha))
-                {
-                    return NormalizeSha(sha);
-                }
+                AppendLog($"최신 커밋 정보를 가져오지 못했습니다({candidate.Url}): {ex.Message}");
             }
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"최신 커밋 정보를 가져오지 못했습니다: {ex.Message}");
         }
         return null;
     }
