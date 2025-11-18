@@ -289,15 +289,24 @@ public class MainForm : Form
         {
             return false;
         }
-        if (module.Type == ModuleType.Ego)
+
+        static bool IsSkipped(string name)
         {
-            return entryName.StartsWith("ego/") || entryName.EndsWith("install-mirror-stage-ego.ps1");
+            var skipSegments = new[] {"/.git/", "/node_modules/", "/.dart_tool/", "/build/"};
+            return skipSegments.Any(name.Contains);
         }
-        if (module.Type == ModuleType.Reflector)
+
+        if (IsSkipped(entryName))
         {
-            return entryName.StartsWith("reflector/") || entryName.EndsWith("install-mirror-stage-reflector.ps1");
+            return false;
         }
-        return false;
+
+        return module.Type switch
+        {
+            ModuleType.Ego => entryName.StartsWith("ego/") || entryName.EndsWith("install-mirror-stage-ego.ps1"),
+            ModuleType.Reflector => entryName.StartsWith("reflector/") || entryName.EndsWith("install-mirror-stage-reflector.ps1"),
+            _ => false
+        };
     }
 
     private (string ScriptPath, string Arguments) PrepareModuleInvocation(ModuleOption module, string extractDir)
