@@ -313,6 +313,7 @@ public class MainForm : Form
                 }
                 var targetDir = Path.Combine(module.InstallRoot, "ego");
                 CopyDirectory(sourceDir, targetDir);
+                RemoveInternalMetadata(targetDir);
                 var scriptPath = Path.Combine(extractDir, "install-mirror-stage-ego.ps1");
                 return (scriptPath, $"-InstallRoot \"{module.InstallRoot}\"");
             }
@@ -444,6 +445,28 @@ public class MainForm : Form
             var targetPath = Path.Combine(destinationDir, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             File.Copy(file, targetPath, true);
+        }
+    }
+
+    private static void RemoveInternalMetadata(string directory)
+    {
+        var patterns = new[] { ".git", "node_modules", ".dart_tool", "build" };
+        foreach (var pattern in patterns)
+        {
+            var matches = Directory.Exists(directory)
+                ? Directory.GetDirectories(directory, pattern, SearchOption.AllDirectories)
+                : Array.Empty<string>();
+            foreach (var match in matches)
+            {
+                try
+                {
+                    Directory.Delete(match, true);
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
         }
     }
 

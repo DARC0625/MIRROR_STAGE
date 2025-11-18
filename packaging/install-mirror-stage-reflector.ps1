@@ -60,6 +60,10 @@ if (Test-Path (Join-Path $InstallRoot 'reflector')) {
     Remove-Item -Path (Join-Path $InstallRoot 'reflector') -Recurse -Force
 }
 Copy-Item -Path $sourceReflector -Destination $InstallRoot -Recurse -Force
+$gitDir = Join-Path $InstallRoot 'reflector/.git'
+if (Test-Path $gitDir) {
+    Remove-Item -Path $gitDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $pythonCmd = Resolve-Python
 Write-Info "Python 실행 파일: $pythonCmd"
