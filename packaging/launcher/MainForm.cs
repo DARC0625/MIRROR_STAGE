@@ -214,7 +214,7 @@ public class MainForm : Form
             {
                 var bundlePath = await DownloadAssetAsync(asset.BrowserDownloadUrl, Path.Combine(tempDir, module.BundleAssetName));
                 var extractDir = Path.Combine(tempDir, "bundle");
-                ZipFile.ExtractToDirectory(bundlePath, extractDir);
+                ExtractBundle(module, bundlePath, extractDir);
 
                 var invocation = PrepareModuleInvocation(module, extractDir);
                 AppendLog($"{module.DisplayName} 설치 스크립트를 실행합니다...");
@@ -258,6 +258,46 @@ public class MainForm : Form
         await using var fs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
         await network.CopyToAsync(fs);
         return destinationPath;
+    }
+
+    private void ExtractBundle(ModuleOption module, string zipPath, string extractDir)
+    {
+        Directory.CreateDirectory(extractDir);
+        using var archive = ZipFile.OpenRead(zipPath);
+        foreach (var entry in archive.Entries)
+        {
+            if (!ShouldExtractEntry(module, entry.FullName))
+            {
+                continue;
+            }
+
+            var normalized = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+            var destinationPath = Path.Combine(extractDir, normalized);
+            var destinationDir = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrEmpty(destinationDir))
+            {
+                Directory.CreateDirectory(destinationDir);
+            }
+            entry.ExtractToFile(destinationPath, overwrite: true);
+        }
+    }
+
+    private static bool ShouldExtractEntry(ModuleOption module, string entryName)
+    {
+        entryName = entryName.Replace("\\", "/");
+        if (string.IsNullOrWhiteSpace(entryName) || entryName.EndsWith("/"))
+        {
+            return false;
+        }
+        if (module.Type == ModuleType.Ego)
+        {
+            return entryName.StartsWith("ego/") || entryName.EndsWith("install-mirror-stage-ego.ps1");
+        }
+        if (module.Type == ModuleType.Reflector)
+        {
+            return entryName.StartsWith("reflector/") || entryName.EndsWith("install-mirror-stage-reflector.ps1");
+        }
+        return false;
     }
 
     private (string ScriptPath, string Arguments) PrepareModuleInvocation(ModuleOption module, string extractDir)
