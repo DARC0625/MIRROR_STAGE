@@ -267,6 +267,10 @@ public class MainForm : Form
         foreach (var entry in archive.Entries)
         {
             var trimmedPath = TrimArchivePrefix(entry.FullName);
+            if (string.IsNullOrWhiteSpace(trimmedPath) || IsBlockedEntry(trimmedPath))
+            {
+                continue;
+            }
             if (!ShouldExtractEntry(module, trimmedPath))
             {
                 continue;
@@ -480,6 +484,23 @@ public class MainForm : Form
         var normalized = entryName.Replace("\\", "/");
         var slashIndex = normalized.IndexOf('/');
         return slashIndex >= 0 ? normalized[(slashIndex + 1)..] : normalized;
+    }
+
+    private static bool IsBlockedEntry(string entryName)
+    {
+        var normalized = entryName.Replace("\\", "/");
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return true;
+        }
+
+        if (normalized.StartsWith(".git/", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("/.git/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return normalized.StartsWith(".github/", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<string?> FetchLatestCommitShaAsync()
