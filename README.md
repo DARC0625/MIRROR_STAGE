@@ -137,9 +137,9 @@ python -m agent.main --config config.json  # 백그라운드 실행 시 systemd/
 
 ## 패키징 및 배포
 - `packaging/install-mirror-stage-ego.ps1`: Windows에서 실행되는 주 설치 스크립트. `%LOCALAPPDATA%\MIRROR_STAGE\tools` 아래에 Node/Flutter SDK를 내려받아 `npm ci → npm run build → flutter build web` 순으로 빌드하고 런처(`start_ego.ps1`)를 구성한다.
-- `packaging/bundle/build_module_bundles.ps1`: EGO와 REFLECTOR를 각각 설치할 수 있는 번들(zip)을 생성한다. GitHub Actions가 자동으로 실행해 `mirror-stage-ego-bundle.zip`, `mirror-stage-reflector-bundle.zip`을 release asset으로 올린다.
-- `packaging/launcher/`: 전용 Windows 런처(EXE). 런처 하나로 EGO/REFLECTOR 설치를 모두 수행한다. 최신 릴리스에서 대상 번들을 내려받아 설치 스크립트를 자동 실행하고, 로그를 GUI에 실시간 표시한다. `dotnet publish packaging/launcher/MirrorStageLauncher.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`로 직접 빌드하거나, [Mirror Stage Launcher 다운로드](https://github.com/DARC0625/MIRROR_STAGE/releases/latest/download/mirror-stage-launcher.zip)를 받아 `MirrorStageLauncher.exe`를 실행하면 된다.
-- Release에는 `mirror-stage-launcher.zip`과 두 개의 번들이 포함된다. 사용자는 런처만 다운받아 설치/업데이트를 수행하거나, 번들을 수동으로 내려받아 PowerShell 스크립트를 직접 실행할 수도 있다.
+- `packaging/bundle/build_module_bundles.ps1`: 폐쇄망/오프라인 환경에 대비한 보조 스크립트다. 필요 시 로컬에서 직접 실행해 번들을 만들 수 있지만, 공식 GitHub Actions 파이프라인에서는 더 이상 호출하지 않는다.
+- `packaging/launcher/`: 전용 Windows 런처(EXE). 런처 하나로 EGO/REFLECTOR 설치를 모두 수행하며, 실행 시 GitHub main 브랜치 아카이브와 설치 스크립트(예: `packaging/install-mirror-stage-ego.ps1`)를 직접 내려받아 최신 상태를 설치한다. `dotnet publish packaging/launcher/MirrorStageLauncher.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`로 직접 빌드하거나, [Mirror Stage Launcher 다운로드](https://github.com/DARC0625/MIRROR_STAGE/releases/latest/download/mirror-stage-launcher.zip)를 받아 `MirrorStageLauncher.exe`를 실행하면 된다.
+- Release에는 `mirror-stage-launcher.zip`만 포함되며, 런처가 실행 중 GitHub에서 필요한 소스/스크립트를 자동으로 내려받는다. 따라서 릴리스 아셋에 별도 번들을 올릴 필요가 없다.
 - WinGet/기업 배포 파이프라인에서는 `build_msix.ps1 -Pack`으로 생성된 MSIX를 업로드하고, WinGet 매니페스트만 작성하면 된다. 필요 시 기존 PowerShell 스크립트만 별도로 실행해 조용히 설치할 수도 있다.
 
 ## 향후 정비 포인트 (현재 코드 기반)

@@ -20,6 +20,12 @@ reflector/reflector.pid
 # Misc
 .DS_Store
 *.log
+.dotnet/
+dotnet-install.sh
+packaging/launcher/bin/
+packaging/launcher/obj/
+packaging/launcher/publish/
+packaging/launcher/mirror-stage-launcher.zip
 
 # Python cache
 **/*.pyc

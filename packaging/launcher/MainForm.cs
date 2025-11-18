@@ -6,7 +6,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -20,8 +19,12 @@ public class MainForm : Form
     private readonly Label _statusLabel;
     private readonly ComboBox _moduleSelector;
     private readonly ModuleOption[] _moduleOptions;
-    private ReleaseInfo? _releaseInfo;
     private bool _isInstalling;
+    private const string RepoOwner = "DARC0625";
+    private const string RepoName = "MIRROR_STAGE";
+    private const string RepoBranch = "main";
+    private static readonly string RepoArchiveUrl = $"https://codeload.github.com/{RepoOwner}/{RepoName}/zip/refs/heads/{RepoBranch}";
+    private static readonly string RepoApiBase = $"https://api.github.com/repos/{RepoOwner}/{RepoName}";
 
     public MainForm()
     {
@@ -38,14 +41,16 @@ public class MainForm : Form
                 "ego",
                 "EGO (지휘본부)",
                 "NestJS/Flutter 기반 제어 센터",
-                "mirror-stage-ego-bundle.zip",
+                "ego/",
+                "packaging/install-mirror-stage-ego.ps1",
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MIRROR_STAGE"),
                 ModuleType.Ego),
             new ModuleOption(
                 "reflector",
                 "REFLECTOR (필드 에이전트)",
                 "Python 기반 원격 에이전트",
-                "mirror-stage-reflector-bundle.zip",
+                "reflector/",
+                "packaging/install-mirror-stage-reflector.ps1",
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MIRROR_STAGE_REFLECTOR"),
                 ModuleType.Reflector)
         };
@@ -201,20 +206,14 @@ public class MainForm : Form
 
         try
         {
-            var release = await EnsureReleaseInfoAsync();
-            var asset = release.Assets.FirstOrDefault(a => string.Equals(a.Name, module.BundleAssetName, StringComparison.OrdinalIgnoreCase));
-            if (asset == null)
-            {
-                throw new InvalidOperationException($"릴리스에 {module.BundleAssetName} 파일이 없습니다. 릴리스를 먼저 생성하세요.");
-            }
-
             var tempDir = Path.Combine(Path.GetTempPath(), "MirrorStageLauncher", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDir);
             try
             {
-                var bundlePath = await DownloadAssetAsync(asset.BrowserDownloadUrl, Path.Combine(tempDir, module.BundleAssetName));
+                var archivePath = Path.Combine(tempDir, "mirror_stage_source.zip");
+                await DownloadFileAsync(RepoArchiveUrl, archivePath, "소스 아카이브");
                 var extractDir = Path.Combine(tempDir, "bundle");
-                ExtractBundle(module, bundlePath, extractDir);
+                ExtractBundle(module, archivePath, extractDir);
 
                 var invocation = PrepareModuleInvocation(module, extractDir);
                 AppendLog($"{module.DisplayName} 설치 스크립트를 실행합니다...");
@@ -223,7 +222,8 @@ public class MainForm : Form
 
                 if (exitCode == 0)
                 {
-                    WriteInstalledVersion(module, release.TagName ?? "latest");
+                    var version = await FetchLatestCommitShaAsync();
+                    WriteInstalledVersion(module, version ?? DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
                     MessageBox.Show(this, $"{module.DisplayName} 설치가 완료되었습니다.", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else
@@ -249,9 +249,9 @@ public class MainForm : Form
         }
     }
 
-    private async Task<string> DownloadAssetAsync(string url, string destinationPath)
+    private async Task<string> DownloadFileAsync(string url, string destinationPath, string description)
     {
-        AppendLog($"번들을 다운로드하는 중... {url}");
+        AppendLog($"{description} 다운로드 중... {url}");
         using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
         await using var network = await response.Content.ReadAsStreamAsync();
@@ -266,12 +266,13 @@ public class MainForm : Form
         using var archive = ZipFile.OpenRead(zipPath);
         foreach (var entry in archive.Entries)
         {
-            if (!ShouldExtractEntry(module, entry.FullName))
+            var trimmedPath = TrimArchivePrefix(entry.FullName);
+            if (!ShouldExtractEntry(module, trimmedPath))
             {
                 continue;
             }
 
-            var normalized = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+            var normalized = trimmedPath.Replace('/', Path.DirectorySeparatorChar);
             var destinationPath = Path.Combine(extractDir, normalized);
             var destinationDir = Path.GetDirectoryName(destinationPath);
             if (!string.IsNullOrEmpty(destinationDir))
@@ -301,12 +302,12 @@ public class MainForm : Form
             return false;
         }
 
-        return module.Type switch
+        if (entryName.StartsWith(module.SourceRoot, StringComparison.OrdinalIgnoreCase))
         {
-            ModuleType.Ego => entryName.StartsWith("ego/") || entryName.EndsWith("install-mirror-stage-ego.ps1"),
-            ModuleType.Reflector => entryName.StartsWith("reflector/") || entryName.EndsWith("install-mirror-stage-reflector.ps1"),
-            _ => false
-        };
+            return true;
+        }
+
+        return string.Equals(entryName, module.InstallerScriptPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private (string ScriptPath, string Arguments) PrepareModuleInvocation(ModuleOption module, string extractDir)
@@ -315,7 +316,7 @@ public class MainForm : Form
         {
             case ModuleType.Ego:
             {
-                var sourceDir = Path.Combine(extractDir, "ego");
+                var sourceDir = Path.Combine(extractDir, NormalizeRelativeDirectory(module.SourceRoot));
                 if (!Directory.Exists(sourceDir))
                 {
                     throw new DirectoryNotFoundException("번들에서 ego 디렉터리를 찾을 수 없습니다.");
@@ -323,12 +324,12 @@ public class MainForm : Form
                 var targetDir = Path.Combine(module.InstallRoot, "ego");
                 CopyDirectory(sourceDir, targetDir);
                 RemoveInternalMetadata(targetDir);
-                var scriptPath = Path.Combine(extractDir, "install-mirror-stage-ego.ps1");
+                var scriptPath = Path.Combine(extractDir, NormalizeRelativeDirectory(module.InstallerScriptPath));
                 return (scriptPath, $"-InstallRoot \"{module.InstallRoot}\"");
             }
             case ModuleType.Reflector:
             {
-                var scriptPath = Path.Combine(extractDir, "install-mirror-stage-reflector.ps1");
+                var scriptPath = Path.Combine(extractDir, NormalizeRelativeDirectory(module.InstallerScriptPath));
                 if (!File.Exists(scriptPath))
                 {
                     throw new FileNotFoundException("번들에 설치 스크립트가 없습니다.", scriptPath);
@@ -371,30 +372,6 @@ public class MainForm : Form
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         return await tcs.Task.ConfigureAwait(false);
-    }
-
-    private async Task<ReleaseInfo> EnsureReleaseInfoAsync()
-    {
-        if (_releaseInfo != null)
-        {
-            return _releaseInfo;
-        }
-
-        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/DARC0625/MIRROR_STAGE/releases/tags/ego-latest");
-        var response = await _httpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync();
-        var release = JsonSerializer.Deserialize<ReleaseInfo>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
-        if (release == null)
-        {
-            throw new InvalidOperationException("릴리스 정보를 파싱할 수 없습니다.");
-        }
-        _releaseInfo = release;
-        AppendLog($"최신 릴리스: {release.TagName}");
-        return release;
     }
 
     private void OpenInstallFolder()
@@ -492,7 +469,45 @@ public class MainForm : Form
         File.WriteAllText(marker, version);
     }
 
-    private record ModuleOption(string Id, string DisplayName, string Description, string BundleAssetName, string InstallRoot, ModuleType Type)
+    private static string NormalizeRelativeDirectory(string relativePath)
+    {
+        var trimmed = relativePath.Trim('/');
+        return trimmed.Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    private static string TrimArchivePrefix(string entryName)
+    {
+        var normalized = entryName.Replace("\\", "/");
+        var slashIndex = normalized.IndexOf('/');
+        return slashIndex >= 0 ? normalized[(slashIndex + 1)..] : normalized;
+    }
+
+    private async Task<string?> FetchLatestCommitShaAsync()
+    {
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{RepoApiBase}/commits/{RepoBranch}");
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            using var document = await JsonDocument.ParseAsync(stream);
+            if (document.RootElement.TryGetProperty("sha", out var shaElement))
+            {
+                var sha = shaElement.GetString();
+                if (!string.IsNullOrWhiteSpace(sha))
+                {
+                    return sha.Length > 7 ? sha[..7] : sha;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"최신 커밋 정보를 가져오지 못했습니다: {ex.Message}");
+        }
+        return null;
+    }
+
+    private record ModuleOption(string Id, string DisplayName, string Description, string SourceRoot, string InstallerScriptPath, string InstallRoot, ModuleType Type)
     {
         public override string ToString() => DisplayName;
     }
@@ -501,15 +516,5 @@ public class MainForm : Form
     {
         Ego,
         Reflector
-    }
-
-    private record ReleaseInfo(string? TagName, AssetInfo[] Assets);
-
-    private record AssetInfo
-    {
-        public string Name { get; init; } = string.Empty;
-
-        [JsonPropertyName("browser_download_url")]
-        public string BrowserDownloadUrl { get; init; } = string.Empty;
     }
 }
