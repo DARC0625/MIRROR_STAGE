@@ -142,6 +142,28 @@ python -m agent.main --config config.json  # 백그라운드 실행 시 systemd/
 - Release에는 `mirror-stage-launcher.zip`만 포함되며, 런처가 실행 중 GitHub에서 필요한 소스/스크립트를 자동으로 내려받는다. 따라서 릴리스 아셋에 별도 번들을 올릴 필요가 없다.
 - WinGet/기업 배포 파이프라인에서는 `build_msix.ps1 -Pack`으로 생성된 MSIX를 업로드하고, WinGet 매니페스트만 작성하면 된다. 필요 시 기존 PowerShell 스크립트만 별도로 실행해 조용히 설치할 수도 있다.
 
+### 런처에서 프런트 서버(자체 CDN) 사용하기
+- 웹 서버에 최신 소스 아카이브를 미리 올려두고 싶다면, `git archive`로 `.git`이 없는 ZIP을 만들어 정적 호스팅한다.
+  ```bash
+  sudo apt update && sudo apt install -y git nginx unzip
+  sudo mkdir -p /srv/mirror-stage && cd /srv/mirror-stage
+  git clone https://github.com/DARC0625/MIRROR_STAGE.git repo
+
+  cd /srv/mirror-stage/repo
+  git pull origin main
+  git archive --format=zip --output /var/www/html/mirror-stage-latest.zip main
+  git rev-parse HEAD > /var/www/html/mirror-stage-latest.sha
+  jq -n --arg sha "$(git rev-parse HEAD)" '{sha:$sha}' > /var/www/html/mirror-stage-version.json
+  ```
+- `MirrorStageLauncher.exe`와 같은 폴더에 `launcher-config.json` 파일을 두고 다음과 같이 설정하면 런처가 GitHub 대신 해당 서버로부터 아카이브/버전 정보를 내려받는다.
+  ```json
+  {
+    "sourceArchiveUrl": "https://cdn.example.com/mirror-stage-latest.zip",
+    "versionInfoUrl": "https://cdn.example.com/mirror-stage-version.json"
+  }
+  ```
+- 이 구성에서 버전 JSON은 `{ "sha": "커밋 SHA" }` 형식을 따른다. `versionInfoUrl`을 생략하면 런처가 GitHub API로 SHA를 조회한다.
+
 ## 향후 정비 포인트 (현재 코드 기반)
 - AlertsService 임계치/메시지 다국어화 및 사용자 정의 규칙 저장소 추가.
 - TwinChannel 스트림 재연결 동안 UI placeholder 제공 및 로컬 시뮬레이터 주입.

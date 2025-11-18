@@ -25,6 +25,9 @@ public class MainForm : Form
     private const string RepoBranch = "main";
     private static readonly string RepoArchiveUrl = $"https://codeload.github.com/{RepoOwner}/{RepoName}/zip/refs/heads/{RepoBranch}";
     private static readonly string RepoApiBase = $"https://api.github.com/repos/{RepoOwner}/{RepoName}";
+    private readonly LauncherConfig _config;
+    private readonly string _archiveUrl;
+    private readonly string? _versionInfoUrl;
 
     public MainForm()
     {
@@ -34,6 +37,9 @@ public class MainForm : Form
 
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MirrorStageLauncher/1.0");
+        _config = LauncherConfig.Load();
+        _archiveUrl = string.IsNullOrWhiteSpace(_config.SourceArchiveUrl) ? RepoArchiveUrl : _config.SourceArchiveUrl!;
+        _versionInfoUrl = string.IsNullOrWhiteSpace(_config.VersionInfoUrl) ? null : _config.VersionInfoUrl!;
 
         _moduleOptions = new[]
         {
@@ -211,7 +217,7 @@ public class MainForm : Form
             try
             {
                 var archivePath = Path.Combine(tempDir, "mirror_stage_source.zip");
-                await DownloadFileAsync(RepoArchiveUrl, archivePath, "소스 아카이브");
+                await DownloadFileAsync(_archiveUrl, archivePath, "소스 아카이브");
                 var extractDir = Path.Combine(tempDir, "bundle");
                 ExtractBundle(module, archivePath, extractDir);
 
@@ -507,17 +513,29 @@ public class MainForm : Form
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{RepoApiBase}/commits/{RepoBranch}");
+            var requestUrl = _versionInfoUrl ?? $"{RepoApiBase}/commits/{RepoBranch}";
+            var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
             var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var document = await JsonDocument.ParseAsync(stream);
-            if (document.RootElement.TryGetProperty("sha", out var shaElement))
+            if (_versionInfoUrl != null)
+            {
+                if (document.RootElement.TryGetProperty("sha", out var shaElementCustom))
+                {
+                    var customSha = shaElementCustom.GetString();
+                    if (!string.IsNullOrWhiteSpace(customSha))
+                    {
+                        return NormalizeSha(customSha);
+                    }
+                }
+            }
+            else if (document.RootElement.TryGetProperty("sha", out var shaElement))
             {
                 var sha = shaElement.GetString();
                 if (!string.IsNullOrWhiteSpace(sha))
                 {
-                    return sha.Length > 7 ? sha[..7] : sha;
+                    return NormalizeSha(sha);
                 }
             }
         }
@@ -526,6 +544,12 @@ public class MainForm : Form
             AppendLog($"최신 커밋 정보를 가져오지 못했습니다: {ex.Message}");
         }
         return null;
+    }
+
+    private static string NormalizeSha(string sha)
+    {
+        var trimmed = sha.Trim();
+        return trimmed.Length > 7 ? trimmed[..7] : trimmed;
     }
 
     private record ModuleOption(string Id, string DisplayName, string Description, string SourceRoot, string InstallerScriptPath, string InstallRoot, ModuleType Type)
@@ -537,5 +561,32 @@ public class MainForm : Form
     {
         Ego,
         Reflector
+    }
+
+    private record LauncherConfig(string? SourceArchiveUrl, string? VersionInfoUrl)
+    {
+        public static LauncherConfig Load()
+        {
+            try
+            {
+                var baseDir = AppContext.BaseDirectory;
+                var configPath = Path.Combine(baseDir, "launcher-config.json");
+                if (!File.Exists(configPath))
+                {
+                    return new LauncherConfig(null, null);
+                }
+
+                var text = File.ReadAllText(configPath);
+                var config = JsonSerializer.Deserialize<LauncherConfig>(text, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+                return config ?? new LauncherConfig(null, null);
+            }
+            catch
+            {
+                return new LauncherConfig(null, null);
+            }
+        }
     }
 }
