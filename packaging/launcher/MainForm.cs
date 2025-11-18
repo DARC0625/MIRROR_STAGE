@@ -20,16 +20,11 @@ public class MainForm : Form
     private readonly ComboBox _moduleSelector;
     private readonly ModuleOption[] _moduleOptions;
     private bool _isInstalling;
-    private const string RepoOwner = "DARC0625";
-    private const string RepoName = "MIRROR_STAGE";
-    private const string RepoBranch = "main";
-    private static readonly string RepoArchiveUrl = $"https://codeload.github.com/{RepoOwner}/{RepoName}/zip/refs/heads/{RepoBranch}";
-    private static readonly string RepoApiBase = $"https://api.github.com/repos/{RepoOwner}/{RepoName}";
     private const string DefaultArchiveUrl = "https://www.darc.kr/mirror-stage-latest.zip";
     private const string DefaultVersionInfoUrl = "https://www.darc.kr/mirror-stage-version.json";
     private readonly LauncherConfig _config;
     private readonly string _archiveUrl;
-    private readonly string? _versionInfoUrl;
+    private readonly string _versionInfoUrl;
 
     public MainForm()
     {
@@ -42,7 +37,7 @@ public class MainForm : Form
         _config = LauncherConfig.Load();
         var configArchive = string.IsNullOrWhiteSpace(_config.SourceArchiveUrl) ? null : _config.SourceArchiveUrl;
         var configVersion = string.IsNullOrWhiteSpace(_config.VersionInfoUrl) ? null : _config.VersionInfoUrl;
-        _archiveUrl = configArchive ?? DefaultArchiveUrl ?? RepoArchiveUrl;
+        _archiveUrl = configArchive ?? DefaultArchiveUrl;
         _versionInfoUrl = configVersion ?? DefaultVersionInfoUrl;
 
         _moduleOptions = new[]
@@ -515,45 +510,25 @@ public class MainForm : Form
 
     private async Task<string?> FetchLatestCommitShaAsync()
     {
-        var candidates = new List<(string Url, bool IsCustom)>
+        try
         {
-            (_versionInfoUrl ?? string.Empty, true),
-            ($"{RepoApiBase}/commits/{RepoBranch}", false)
-        }.Where(c => !string.IsNullOrWhiteSpace(c.Url)).ToList();
-
-        foreach (var candidate in candidates)
-        {
-            try
+            var request = new HttpRequestMessage(HttpMethod.Get, _versionInfoUrl);
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            using var document = await JsonDocument.ParseAsync(stream);
+            if (document.RootElement.TryGetProperty("sha", out var shaElementCustom))
             {
-                var request = new HttpRequestMessage(HttpMethod.Get, candidate.Url);
-                var response = await _httpClient.SendAsync(request);
-                response.EnsureSuccessStatusCode();
-                await using var stream = await response.Content.ReadAsStreamAsync();
-                using var document = await JsonDocument.ParseAsync(stream);
-                if (candidate.IsCustom)
+                var customSha = shaElementCustom.GetString();
+                if (!string.IsNullOrWhiteSpace(customSha))
                 {
-                    if (document.RootElement.TryGetProperty("sha", out var shaElementCustom))
-                    {
-                        var customSha = shaElementCustom.GetString();
-                        if (!string.IsNullOrWhiteSpace(customSha))
-                        {
-                            return NormalizeSha(customSha);
-                        }
-                    }
-                }
-                else if (document.RootElement.TryGetProperty("sha", out var shaElement))
-                {
-                    var sha = shaElement.GetString();
-                    if (!string.IsNullOrWhiteSpace(sha))
-                    {
-                        return NormalizeSha(sha);
-                    }
+                    return NormalizeSha(customSha);
                 }
             }
-            catch (Exception ex)
-            {
-                AppendLog($"최신 커밋 정보를 가져오지 못했습니다({candidate.Url}): {ex.Message}");
-            }
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"버전 정보를 불러오지 못했습니다({_versionInfoUrl}): {ex.Message}");
         }
         return null;
     }

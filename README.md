@@ -138,31 +138,48 @@ python -m agent.main --config config.json  # 백그라운드 실행 시 systemd/
 ## 패키징 및 배포
 - `packaging/install-mirror-stage-ego.ps1`: Windows에서 실행되는 주 설치 스크립트. `%LOCALAPPDATA%\MIRROR_STAGE\tools` 아래에 Node/Flutter SDK를 내려받아 `npm ci → npm run build → flutter build web` 순으로 빌드하고 런처(`start_ego.ps1`)를 구성한다.
 - `packaging/bundle/build_module_bundles.ps1`: 폐쇄망/오프라인 환경에 대비한 보조 스크립트다. 필요 시 로컬에서 직접 실행해 번들을 만들 수 있지만, 공식 GitHub Actions 파이프라인에서는 더 이상 호출하지 않는다.
-- `packaging/launcher/`: 전용 Windows 런처(EXE). 런처 하나로 EGO/REFLECTOR 설치를 모두 수행하며, 기본값으로 `https://www.darc.kr/mirror-stage-latest.zip`(자체 CDN)에 올려둔 소스/스크립트를 내려받는다. `launcher-config.json`을 배치하면 다른 URL 또는 GitHub를 가리키게 바꿀 수 있다. `dotnet publish packaging/launcher/MirrorStageLauncher.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`로 직접 빌드하거나, [Mirror Stage Launcher 다운로드](https://github.com/DARC0625/MIRROR_STAGE/releases/latest/download/mirror-stage-launcher.zip)를 받아 `MirrorStageLauncher.exe`를 실행하면 된다.
+- `packaging/launcher/`: 전용 Windows 런처(EXE). 런처 하나로 EGO/REFLECTOR 설치를 모두 수행하며, 기본값으로 `https://www.darc.kr/mirror-stage-latest.zip`(자체 CDN)에 올려둔 소스/스크립트를 **유일한** 공급원으로 사용한다. 필요 시 `launcher-config.json`을 배치하면 다른 URL을 가리킬 수 있지만 GitHub로의 폴백은 존재하지 않는다. `dotnet publish packaging/launcher/MirrorStageLauncher.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`로 직접 빌드하거나, [Mirror Stage Launcher 다운로드](https://github.com/DARC0625/MIRROR_STAGE/releases/latest/download/mirror-stage-launcher.zip)를 받아 `MirrorStageLauncher.exe`를 실행하면 된다.
 - Release에는 `mirror-stage-launcher.zip`만 포함되며, 런처가 실행 중 GitHub에서 필요한 소스/스크립트를 자동으로 내려받는다. 따라서 릴리스 아셋에 별도 번들을 올릴 필요가 없다.
 - WinGet/기업 배포 파이프라인에서는 `build_msix.ps1 -Pack`으로 생성된 MSIX를 업로드하고, WinGet 매니페스트만 작성하면 된다. 필요 시 기존 PowerShell 스크립트만 별도로 실행해 조용히 설치할 수도 있다.
 
 ### 런처에서 프런트 서버(자체 CDN) 사용하기
-- 웹 서버에 최신 소스 아카이브를 미리 올려두고 싶다면, `git archive`로 `.git`이 없는 ZIP을 만들어 정적 호스팅한다.
+- darc.kr CDN을 관리하려면 `scripts/cdn/update-mirror-stage-cdn.sh`를 서버에 배치해 주기적으로 실행한다. 스크립트는 `git fetch → git reset --hard origin/main → git archive` → `/var/www/html/mirror-stage-latest.zip`/`mirror-stage-version.json`/`mirror-stage-latest.sha` 생성을 자동화한다.
   ```bash
-  sudo apt update && sudo apt install -y git nginx unzip
-  sudo mkdir -p /srv/mirror-stage && cd /srv/mirror-stage
+  sudo apt update && sudo apt install -y git nginx jq unzip
+  sudo mkdir -p /home/darc/mirror_stage && cd /home/darc/mirror_stage
   git clone https://github.com/DARC0625/MIRROR_STAGE.git repo
+  sudo install -m 755 scripts/cdn/update-mirror-stage-cdn.sh /usr/local/bin/update-mirror-stage-cdn.sh
+  sudo /usr/local/bin/update-mirror-stage-cdn.sh
+  ```
+- 실시간에 가깝게 유지하려면 systemd 타이머나 cron으로 스크립트를 호출한다. 예시:
+  ```
+  # /etc/systemd/system/mirror-stage-cdn.service
+  [Unit]
+  Description=Sync MIRROR_STAGE archive to darc.kr
 
-  cd /srv/mirror-stage/repo
-  git pull origin main
-  git archive --format=zip --output /var/www/html/mirror-stage-latest.zip main
-  git rev-parse HEAD > /var/www/html/mirror-stage-latest.sha
-  jq -n --arg sha "$(git rev-parse HEAD)" '{sha:$sha}' > /var/www/html/mirror-stage-version.json
+  [Service]
+  Type=oneshot
+  Environment=REPO_DIR=/home/darc/mirror_stage/repo
+  Environment=WEB_ROOT=/var/www/html
+  ExecStart=/usr/local/bin/update-mirror-stage-cdn.sh
   ```
-- `MirrorStageLauncher.exe`와 같은 폴더에 `launcher-config.json` 파일을 두고 다음과 같이 설정하면 런처가 GitHub 대신 해당 서버로부터 아카이브/버전 정보를 내려받는다.
-  ```json
-  {
-    "sourceArchiveUrl": "https://cdn.example.com/mirror-stage-latest.zip",
-    "versionInfoUrl": "https://cdn.example.com/mirror-stage-version.json"
-  }
   ```
-- 이 구성에서 버전 JSON은 `{ "sha": "커밋 SHA" }` 형식을 따른다. `versionInfoUrl`을 생략하면 런처가 GitHub API로 SHA를 조회한다.
+  # /etc/systemd/system/mirror-stage-cdn.timer
+  [Unit]
+  Description=Run MIRROR_STAGE CDN sync frequently
+
+  [Timer]
+  OnCalendar=*:0/1
+  Persistent=true
+
+  [Install]
+  WantedBy=timers.target
+  ```
+  ```bash
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now mirror-stage-cdn.timer
+  ```
+- 런처는 기본적으로 `https://www.darc.kr/mirror-stage-latest.zip` / `https://www.darc.kr/mirror-stage-version.json` 만 사용한다. 다른 CDN을 사용하고 싶을 때에만 `launcher-config.json`으로 URL을 바꿀 수 있다.
 
 ## 향후 정비 포인트 (현재 코드 기반)
 - AlertsService 임계치/메시지 다국어화 및 사용자 정의 규칙 저장소 추가.
