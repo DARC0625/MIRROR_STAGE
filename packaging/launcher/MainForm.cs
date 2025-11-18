@@ -380,7 +380,7 @@ public class MainForm : Form
             return _releaseInfo;
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/DARC0625/MIRROR_STAGE/releases/latest");
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/DARC0625/MIRROR_STAGE/releases/tags/ego-latest");
         var response = await _httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync();
